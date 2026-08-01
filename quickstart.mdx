@@ -1,47 +1,87 @@
 ---
 title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+description: "Run Revcenter locally against a real Postgres database"
 ---
-
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
 
 ## Prerequisites
 
-Before you begin, you must have:
+- Node.js and [pnpm](https://pnpm.io)
+- [Docker](https://www.docker.com/) — the local Supabase stack runs in containers
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (`brew install supabase/tap/supabase`)
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+## 1. Install dependencies
 
-## Get started
+```bash
+pnpm install
+```
 
-<Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+## 2. Start the local database
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+This spins up a real local Postgres, Storage, and a local email testbed (Mailpit) — the
+same stack used in production, running on your machine.
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+```bash
+supabase start
+```
 
-    ```bash
-    your-cli start
-    ```
-  </Step>
-</Steps>
+The first run pulls several Docker images and can take a few minutes. When it finishes it
+prints connection details, including `DB_URL`, `ANON_KEY`, and `SERVICE_ROLE_KEY` — you'll
+need these for the next step.
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## 3. Configure environment variables
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+```bash
+cp .env.example .env.local
+```
+
+Fill in `.env.local` with the values from `supabase start`'s output for the Supabase
+block, plus:
+
+<ParamField path="BETTER_AUTH_SECRET" type="string" required>
+  32+ random characters. Generate one with `openssl rand -base64 32`.
+</ParamField>
+
+<ParamField path="CREDENTIAL_ENCRYPTION_KEY" type="string" required>
+  A 32-byte base64 key used to encrypt API keys saved through the Credentials page.
+  Generate one with `openssl rand -base64 32`.
+</ParamField>
+
+<ParamField path="COOKIE_DOMAIN" type="string" default="localhost">
+  Leave as `localhost` for local development.
+</ParamField>
+
+Harvest, Serper, Anthropic, and Trigger.dev keys are also required by the env schema
+(`lib/env.ts`) but only need to be *present* to boot — see
+[API Keys](/guides/api-keys) for how to add real ones once the app is running, without
+touching `.env.local` again.
+
+## 4. Apply the database schema
+
+```bash
+supabase db reset
+```
+
+This runs every migration in `supabase/migrations/` against your local database,
+including the auth schema, scoring functions, and row-level security policies.
+
+## 5. Start the app
+
+```bash
+pnpm dev
+```
+
+`predev` runs a boot-validation script first (`scripts/verify.ts`) that checks your
+environment variables, confirms the database schema is live, and pings dependent
+services — if something's misconfigured, you'll see exactly what before the server even
+starts.
+
+Visit the printed URL (usually `http://localhost:3000`, or the next open port), sign up
+for an account, and you'll land on the calibrate screen.
+
+## Verifying everything works
+
+```bash
+pnpm build          # production build + typecheck
+pnpm lint            # eslint
+supabase test db     # pgTAP: confirms RLS actually blocks unauthenticated access
+```

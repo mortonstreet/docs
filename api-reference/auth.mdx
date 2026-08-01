@@ -1,0 +1,74 @@
+---
+title: "Authentication"
+description: "Endpoints handled by better-auth at /api/auth/*"
+---
+
+All auth endpoints are handled by a single catch-all route
+(`app/api/auth/[...all]/route.ts`) that delegates to
+[better-auth](https://www.better-auth.com). The app's own frontend uses better-auth's
+client SDK (`lib/auth-client.ts`) rather than calling these directly — this page
+documents what that SDK calls under the hood.
+
+## Core
+
+#### `POST /api/auth/sign-up/email`
+Body: `{ name, email, password }`. Creates a user, sends a verification email. The
+account cannot sign in until the email is verified.
+
+#### `POST /api/auth/sign-in/email`
+Body: `{ email, password }`. Returns a session and sets the session cookie on success.
+
+#### `POST /api/auth/sign-out`
+Clears the session cookie.
+
+#### `GET /api/auth/get-session`
+Returns the current session and user, or `null` if signed out. This is what
+`lib/session.ts`'s server-side helpers call internally.
+
+## Email verification
+
+#### `GET /api/auth/verify-email`
+Query: `token`, `callbackURL`. This is the link sent in the verification email —
+visiting it verifies the account and redirects to `callbackURL` (defaults to `/`, which
+redirects to `/intake`).
+
+#### `POST /api/auth/send-verification-email`
+Body: `{ email, callbackURL }`. Used by the "Resend email" button on `/verify`.
+
+## Password reset
+
+#### `POST /api/auth/request-password-reset`
+Body: `{ email, redirectTo }`. Always responds success-shaped regardless of whether the
+email exists, to avoid leaking which addresses have accounts.
+
+#### `POST /api/auth/reset-password`
+Body: `{ newPassword, token }`. The token comes from the link in the reset email.
+
+## Organizations
+
+#### `POST /api/auth/organization/create`
+Body: `{ name, slug }`. Creates an organization and makes the caller its `owner`.
+
+#### `GET /api/auth/organization/list`
+Lists organizations the current user belongs to.
+
+#### `POST /api/auth/organization/set-active`
+Body: `{ organizationId }`. Sets which organization the current session is "in" — this
+is what scopes credentials, scans, and everything else.
+
+#### `GET /api/auth/organization/get-invitation`
+Query: `id`. Returns invitation details (organization name, invited email) — callable
+while signed out, since `/accept-invitation/[id]` needs to show this before the visitor
+logs in.
+
+#### `POST /api/auth/organization/accept-invitation`
+Body: `{ invitationId }`. Requires the signed-in user's email to match the invited
+email, and (depending on configuration) a verified email address.
+
+<Note>
+  This is not an exhaustive list of every endpoint better-auth's organization plugin
+  exposes — see [better-auth's own docs](https://www.better-auth.com/docs/plugins/organization)
+  for the full surface (removing members, updating roles, rejecting/canceling
+  invitations, and so on), all of which are available even though the current UI doesn't
+  expose every action yet.
+</Note>

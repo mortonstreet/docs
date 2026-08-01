@@ -1,0 +1,64 @@
+---
+title: "Using the App"
+description: "A walkthrough of what's live today"
+---
+
+## First run: sign up and calibrate
+
+1. **Sign up** at `/signup` with your name, email, and a password. You'll land on
+   `/verify` with a "check your email" message.
+2. **Click the link** in the verification email. This confirms your address and signs
+   you in.
+3. **Name your organization** at `/onboarding`. This is the workspace your scans,
+   candidates, and API keys live in — see [Organizations](/guides/authentication#organizations)
+   for how multi-user access works.
+4. You land on **`/intake`** — the calibrate screen.
+
+## The calibrate screen
+
+Describe who you're looking for in plain language, or paste a job description, into the
+text box. A few seconds after you stop typing, the system extracts structured criteria
+and shows five chips:
+
+| Chip | Required | Resolved from |
+|---|---|---|
+| Location | Yes | Metro area |
+| Job Title | Yes | Role family (CFO, VP Finance, Controller, VP Operations, Plant Manager, VP Supply Chain) |
+| Years of Experience | No | Explicit or implied experience range |
+| Industry | No | Named industries or sectors |
+| Skills | No | Named skills |
+
+A chip lights up green only when the system is confident (≥70%) it resolved that field
+correctly — an unlit chip means "didn't find this, or not sure," not "ignored." The two
+required chips (Location, Job Title) need to confirm before the next step becomes
+available.
+
+**Suggestions** above the text box are generated from your organization's seeded role
+families crossed with example metros — click one to fill the box and start from there.
+
+**Attach a job description**: the paperclip icon accepts `.txt` files directly (their
+contents get appended to the text box). PDF and DOCX extraction isn't wired up yet — for
+now, paste the text directly.
+
+If you see a banner about `ANTHROPIC_API_KEY` needing a real value, see
+[API Keys](/guides/api-keys) — this is the one required provider whose calibration
+depends on it directly.
+
+## Sidebar navigation
+
+| Item | What it does |
+|---|---|
+| **New search** | The calibrate screen described above. |
+| **Scans** | Coming soon — the live run console and lead list land once the sourcing/scoring orchestration is wired up. |
+| **Firms** | Coming soon — firm profiles and mandate tables, populated once a scan has run. |
+| **Credentials** | Add, rotate, and deactivate API keys. See [API Keys](/guides/api-keys). |
+| **Gates** | Coming soon — configure whether each stage of a scan pauses for approval or proceeds automatically. |
+| **Cost** | Coming soon — spend per scan, cache-hit rate, and provider cost breakdowns. |
+
+Click your name at the bottom of the sidebar to sign out.
+
+## What "coming soon" means in practice
+
+Pages marked coming soon render a plain, consistent placeholder rather than a broken
+page or a 404 — each one names the spec section and phase it corresponds to, so it's
+clear what's intentionally not built yet versus actually broken.
