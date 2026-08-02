@@ -2,11 +2,6 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Revcenter",
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "favicon": "/favicon.svg",
   "colors": {
     "primary": "#1A1A1A",
     "light": "#4D4D4D",
@@ -22,10 +17,21 @@
         ]
       },
       {
+        "group": "Features",
+        "pages": [
+          "guides/new-search",
+          "guides/bulk-search",
+          "guides/past-searches",
+          "guides/people-companies",
+          "guides/campaigns"
+        ]
+      },
+      {
         "group": "Guides",
         "pages": [
           "guides/using-the-app",
           "guides/search-quality",
+          "guides/account-settings",
           "guides/authentication",
           "guides/api-keys"
         ]
@@ -42,5 +48,10 @@
   },
   "footer": {
     "socials": {}
-  }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": "/favicon.svg"
 }

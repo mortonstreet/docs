@@ -1,0 +1,39 @@
+---
+title: "Account Settings"
+description: "Profile, workspace, team, export policy, and platform access"
+---
+
+Open Account Settings from your name at the bottom of the sidebar (`/settings`).
+
+## Access is invite-only
+
+Revcenter has no public signup. Accounts are created exclusively through workspace
+invitations — an admin invites an email from the Team tab, the recipient follows the
+emailed link and verifies with a one-time code. A sign-in attempt from an email with
+no pending invitation is rejected. Sign-in itself is passwordless: existing users
+request a magic link from the login page.
+
+## The tabs
+
+| Tab | What it covers |
+|---|---|
+| **General** | Workspace name and export policy: allow/disallow single and bulk exports for members, and optionally restrict exports to leads with contact info. |
+| **Profile** | Your name and email. |
+| **Team** | Members and roles, pending invitations, invite by email. Admin/member roles control who can run searches, campaigns, and exports. |
+| **Do-Not-Contact** | Exclusion rules — companies and countries that must never appear in results or exports. |
+
+## Admin pages (sidebar → Admin)
+
+- **Credentials** — add, rotate, and deactivate API keys (Serper, HarvestAPI,
+  Anthropic, Prospeo, Smartlead, HeyReach). Keys are encrypted at rest; database
+  keys take effect immediately and win over environment configuration. See
+  [API Keys](/guides/api-keys).
+- **Gates** — per-stage approval behavior for scans (auto-approve vs. require
+  approval).
+- **Tenants** (Revcenter team only) — workspace provisioning and the dev workspace
+  switcher.
+
+## Frozen accounts
+
+An administrator can freeze an account: the user can still sign in, but the entire
+app is view-disabled with a banner until unfrozen.

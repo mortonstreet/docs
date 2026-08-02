@@ -1,0 +1,29 @@
+---
+title: "Past Searches"
+description: "Run consoles, quality reports, contact enrichment, and exports for every scan"
+---
+
+Past Searches (`/scans`) lists every scan in the workspace — filterable by sector,
+searchable by title. Click one to open its run console.
+
+## The run console
+
+- **Stage ledger** — live progress through pool search, LinkedIn search, enrichment,
+  contact waterfall, and scoring, with counts per stage.
+- **Quality report** — when the target was met: qualified count, total spend, and cost
+  per qualified. When it wasn't: the scarcity report — best available by tier, which
+  gates rejected how many, and the weakest scoring dimension — plus your options
+  (find more, relax the named criteria, or work the 70–84 tier).
+- **Ranked candidates** — tier badges, signal chips, inline reject reasons; click
+  through for full profiles and Accept / Maybe / Reject verdicts.
+
+## Actions
+
+| Action | What it does |
+|---|---|
+| **Find more** | Re-runs the pipeline deeper on the same scan. Deduped; already-enriched profiles are never re-paid for; previously un-enriched stragglers get enriched first. |
+| **Enrich** (contact waterfall) | Human-gated Prospeo lookup for emails and/or phones on the scan's candidates. The click is the approval — nothing contact-related is billed without it. |
+| **CSV** | Ranked export with subscores, tier, reject codes, and signals. Subject to the workspace export policy in Account Settings. |
+
+Client-mode scans additionally show discovered companies, the org-chart approval gate
+(pick which firms get the paid scan), and decision-maker leads per firm.

@@ -1,0 +1,39 @@
+---
+title: "Campaigns"
+description: "From ranked candidates to Smartlead/HeyReach outreach — with a human launch gate"
+---
+
+Campaigns (`/campaigns`) turns past searches into outreach. The LLM only ever drafts
+the plan; every API call against Smartlead or HeyReach is a fixed, ordered step shown
+in a live ledger.
+
+## Building a campaign
+
+1. **Pick lead sources** — one or more completed searches; leads are deduped across
+   them.
+2. **Describe the campaign** — platform, volume, schedule, tone ("HeyReach, 20
+   leads/day, weekdays 9–5 Detroit time, friendly 3-step sequence…"). The model
+   selector (Haiku/Sonnet/Opus) sets copywriting strength.
+3. **Review the plan** — platform, schedule, eligible-lead counts, preflight issues
+   (missing API keys, no connected senders, no eligible contacts), and the full copy.
+
+## You control the copy — three ways
+
+- **Verbatim**: paste your own copy in the prompt ("use this exact message: …") — it's
+  used exactly, never rewritten; the model only writes steps you left unwritten.
+- **Edit before publish**: the connection note (with 280-character counter) and every
+  step message in the preview are editable. What you see is what publishes.
+- **Skip copy here entirely**: **Push list only** creates a HeyReach list with the
+  selected leads and no campaign — build the sequence in HeyReach's own builder.
+
+## The launch gate
+
+Publishing stages everything — list, leads, sequence, schedule — and then **stops**.
+The campaign shows "ready to launch" with nothing sent; on HeyReach it exists as a
+reviewable draft. The explicit **Launch campaign** click is the approval (stamped with
+who and when). Nothing ever sends without a human go.
+
+## After launch
+
+Live campaigns show leads pushed and the external campaign ID. Past campaigns keep
+their full step ledger, including the exact provider error on any failed step.

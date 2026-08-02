@@ -1,0 +1,57 @@
+---
+title: "New Search"
+description: "From a plain-language ask or a JD file to a ranked, qualified candidate list"
+---
+
+New search (`/intake`) turns a role description into a validated candidate search.
+
+## Input
+
+Describe the role in your own words, paste a job description, or attach a **PDF, DOCX,
+TXT, or MD** file with the paperclip. As you type, five chips confirm what the system
+recognized — Location, Job Title, Years of Experience, Industry, Skills. Location accepts
+a city ("Detroit, MI"), a state, "USA" for nationwide, or "remote". Written-out numbers
+("Eight (8) or more years") are understood.
+
+Two modes: **Candidates** (find people for a role) and **Clients** (find firms with open
+roles — calibrates at the firm level, and pauses for your approval before the paid
+org-chart scan). The model selector picks extraction strength: Haiku (fastest), Sonnet,
+or Opus.
+
+## What runs when you send
+
+<Steps>
+  <Step title="Pool search — free">
+    Your workspace's already-enriched candidates are searched semantically first. Warm
+    matches cost nothing and arrive already enriched; matches that fail this search's
+    gates are skipped, not imported.
+  </Step>
+  <Step title="Discovery">
+    Google X-ray queries built from the criteria. Small markets automatically widen:
+    the commute radius scales with market density, and searches near small towns add
+    the nearest sizable city ("Findlay" also searches "Toledo").
+  </Step>
+  <Step title="Enrichment">
+    HarvestAPI scrapes each new profile (cached 60 days — re-surfaced profiles are
+    free). Anonymized "LinkedIn Member" results are dropped before costing anything.
+  </Step>
+  <Step title="Gates, scoring, and the qualification loop">
+    Hard gates reject clear mismatches with a named reason; everyone else gets a
+    JD-weighted score. The pipeline searches deeper until it holds at least 10
+    enriched candidates at 85+ (or your requested count), then reports either the
+    economics line or a scarcity report naming what's binding. See
+    [Search Quality & Scoring](/guides/search-quality).
+  </Step>
+</Steps>
+
+## Reading the results
+
+- **Tiers**: A (85+, qualified) · B (70–84) · C (55–69) · D (below, or gated).
+- **Gated rows** show their reject reason inline ("out of area", "missing required
+  skill: cpa") — a zero always explains itself.
+- **Signal chips**: tenure, move-ready, people leader, open-to-work, and per-search
+  fit signals.
+- Click any row for the full profile — and record an **Accept / Maybe / Reject**
+  verdict; these labels calibrate scoring to your team's standards over time.
+- **Find more** searches deeper on the same scan; **CSV** exports the ranked list with
+  subscores, tier, and reject codes.
