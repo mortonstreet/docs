@@ -31,6 +31,7 @@ an entity-coverage breakdown the calibrate screen uses to light up chips.
     "metro": "Cleveland, OH",
     "industries": ["manufacturing"],
     "years_experience": { "min": 10 },
+    "rubric_weights": { "title": 0.3, "years": 0.25, "skills": 0.2, "industry": 0.15, "geo": 0.1 },
     "_meta": { "confidence": { "metro": 0.95, "family": 0.9 } }
   },
   "entityCoverage": {
@@ -49,6 +50,15 @@ an entity-coverage breakdown the calibrate screen uses to light up chips.
 <ResponseField name="criteria" type="CriteriaV2">
   The extracted criteria object. Every field is optional — an absent field means the
   model didn't find or wasn't confident about that slot, not that it was rejected.
+  `metro` may be a country name ("United States") for nationwide searches, and
+  written-out numbers are normalized ("Eight (8) years or more" → `{ "min": 8 }`).
+</ResponseField>
+
+<ResponseField name="criteria.rubric_weights" type="object">
+  Scoring emphasis derived from what this job description stresses, one weight per
+  dimension the input constrains. Locked to the scan at creation; the scorer clamps
+  and renormalizes. The extractor is blinded to result targets and thresholds — see
+  [Search Quality & Scoring](/guides/search-quality).
 </ResponseField>
 
 <ResponseField name="entityCoverage" type="object">
@@ -77,5 +87,7 @@ an entity-coverage breakdown the calibrate screen uses to light up chips.
 ### What it doesn't do
 
 This endpoint only extracts and validates criteria — it never calls Harvest, Serper, or
-any sourcing provider, and never produces a numeric score. Scoring is computed entirely
-in SQL once a scan actually runs (not yet wired up in the UI).
+any sourcing provider, and never produces a candidate score. Candidate scoring is
+deterministic code that runs once a scan executes (`POST /api/scans`) — see
+[Search Quality & Scoring](/guides/search-quality) and the
+[Scans API](/api-reference/scans).

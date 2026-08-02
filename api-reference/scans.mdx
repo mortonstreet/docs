@@ -1,0 +1,100 @@
+---
+title: "Scans"
+description: "Run candidate searches, read results, label candidates, ingest JD files"
+---
+
+All endpoints require a signed-in session. Provider keys resolve from the workspace's
+database-managed credentials first, then `.env`.
+
+## Start a scan
+
+#### `POST /api/scans`
+
+Creates a scan from extracted criteria and starts the pipeline (fire-and-forget — poll
+`GET /api/scans/:id` for progress).
+
+```json
+{
+  "rawInput": "Plant Controller in Detroit, MI … find me 10 candidates",
+  "criteria": { "family": "Controller", "metro": "Detroit, MI" },
+  "mode": "candidate"
+}
+```
+
+<ParamField body="criteria" type="CriteriaV2" required>
+  The object returned by `POST /api/intake` — including any `rubric_weights` the
+  extraction emitted. Criteria (weights included) are locked to the scan at creation.
+</ParamField>
+<ParamField body="mode" type="string">
+  `candidate` (default) or `client` (firm-level discovery with an approval gate).
+</ParamField>
+
+The result target is parsed from explicit phrasing only ("find me 10 …", "top 5
+candidates") — a bare number in a pasted JD ("Eight (8) years") never sets it.
+Default 10, clamped 1–50. The qualification loop aims for
+`max(10, target)` enriched candidates at 85+.
+
+## Read a scan
+
+#### `GET /api/scans/:id`
+
+Returns the scan row, the live runs ledger (one row per pipeline stage: `pool`,
+`search`, `hydrate`, `contacts`, `score`), and ranked candidates.
+
+Scan fields added by the quality-gates release:
+
+<ResponseField name="qualified" type="number">
+  Count of enriched, ungated candidates scoring 85+ at pipeline close.
+</ResponseField>
+<ResponseField name="cost_per_qualified" type="number">
+  `act_cost_usd / qualified` — the primary cost KPI. Null when nothing qualified.
+</ResponseField>
+<ResponseField name="quality_report" type="object">
+  `{ target, met, qualified, total, tiers: {a,b,c,d}, rejects: {CODE: count}, binding: string[] }`
+  — the scarcity report when `met` is false: tier distribution, reject-code
+  distribution, and human-readable binding constraints.
+</ResponseField>
+
+Each candidate row carries `score`, `rank`, `verdict`, and `subscores` — including
+`tier` (`A`–`D`), a `reject_code` when a hard gate fired, and the per-dimension
+subscores (`title_match`, `years_fit`, `skills_match`, `geo_fit`, `industry_match`,
+`seniority_fit`, `enrichment`).
+
+## Label a candidate
+
+#### `POST /api/scans/:id/candidates/:candidateId/verdict`
+
+```json
+{ "verdict": "accept" }
+```
+
+<ParamField body="verdict" type="string" required>
+  `accept` | `reject` | `maybe`, or `null` to clear. Stored per scan (a judgment about
+  this candidate *for this search*), with a timestamp. These labels are the calibration
+  data for threshold and weight tuning — see
+  [Search Quality & Scoring](/guides/search-quality).
+</ParamField>
+
+## Find more
+
+#### `POST /api/scans/:id/expand`
+
+Re-runs the pipeline deeper on a completed candidate scan. Upserts dedupe against
+everything already pulled; already-enriched profiles are never re-paid for.
+
+## Ingest a JD file
+
+#### `POST /api/ingest-file`
+
+Converts an uploaded job description file to text for the calibrate screen. Send the
+raw file bytes as the request body with the matching `Content-Type`
+(`application/pdf` or the DOCX MIME type) and an `X-Filename` header. 20 MB limit.
+
+```json
+{ "text": "Plant Controller for a manufacturing company…", "pages": 2, "chars": 1843 }
+```
+
+| Status | Meaning |
+|---|---|
+| 415 | Not a PDF or DOCX. |
+| 422 | No extractable text layer (e.g. a scanned image PDF — OCR isn't supported yet). |

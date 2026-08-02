@@ -1,0 +1,125 @@
+---
+title: "Search Quality & Scoring"
+description: "How candidates are gated, scored, qualified — and why the numbers can be trusted"
+---
+
+Every ranked candidate in Revcenter carries a score you can decompose, a tier you can
+review, and — if they were rejected — a machine-readable reason. This page explains the
+model behind those numbers.
+
+## The hybrid scoring model
+
+Scoring follows the hybrid methodology from the research literature on candidate–JD
+matching: **rule-based comparison for structured attributes, sentence embeddings for
+skills, weighted aggregation** — with an LLM used only to *read the job description*,
+never to produce a number.
+
+<Steps>
+  <Step title="Hard gates — binary, ordered, machine-readable">
+    Before any weighted math, candidates pass through gates. Failing one means score 0
+    and a reject code — never a mushy "low score":
+
+    | Code | Meaning |
+    |---|---|
+    | `ANONYMIZED` | Anonymized "LinkedIn Member" profile — dropped before enrichment is even paid for |
+    | `EXCLUDED:<term>` | Title matches the JD's exclusion list |
+    | `SENIORITY_OUT` | More than one ladder level outside the requested band |
+    | `YEARS_OUT` | Estimated experience clearly under the JD's minimum |
+    | `GEO_OUT` | Out of area (out-of-state; same-state suburbs are never hard-gated) |
+    | `SKILL_MISSING:<skill>` | A required skill is absent from a well-populated profile |
+
+    Gates are deliberately conservative: **unknown data passes**. A sparse LinkedIn
+    skill list is "unknown", not "absent" — and a candidate holding the exact requested
+    title is never gated on the competencies that title implies.
+  </Step>
+  <Step title="Weighted rubric — compiled from your JD">
+    During extraction, the model also emits **rubric weights** reflecting what *your*
+    job description emphasizes — a "CPA required, 10+ years" JD weights skills and
+    experience heavily; a site-based plant role weights geography. Weights are clamped,
+    renormalized over the dimensions the JD actually specifies, and locked for the run:
+    the same profile scores identically in every wave of the same scan.
+
+    Dimensions: title match, years-of-experience fit, skills match, geography,
+    industry, seniority fit. Skills use all-MiniLM-L6-v2 sentence embeddings, so
+    related-but-differently-worded skills earn credit without exact keywords.
+  </Step>
+  <Step title="Qualification — enrichment is mandatory">
+    **Qualified** means: fully enriched by HarvestAPI, ungated, and scoring 85+.
+    Un-enriched profiles are capped at 70 — a profile the system couldn't verify can
+    never present as qualified. Search-result snippets are discovery signal only and
+    are excluded from enriched scoring entirely.
+  </Step>
+</Steps>
+
+## The qualification loop
+
+A scan doesn't stop at "some results." It loops — pool search, then progressively
+deeper web discovery — until it holds **at least 10 qualified candidates** (or your
+requested count, if higher), within a bounded enrichment budget. Trading an extra
+minute or two for a vetted result set is deliberate.
+
+When the target can't be met, you get a **scarcity report** instead of a silent short
+list: best available by tier, the reject-code distribution, and the named binding
+constraints — so "relax the experience requirement" or "widen the metro" becomes an
+informed decision, not a guess.
+
+## The semantic candidate pool
+
+Every enriched profile is embedded into a vector index (pgvector). New scans search
+this warm pool **before** any paid discovery: matches arrive instantly, already
+enriched, at zero cost — and still face the same gates and rubric as fresh candidates.
+The pool compounds: measured on a repeat search of the same market, cost-per-qualified
+fell from $0.61/0 qualified (cold, first run) to under a cent with 16 qualified
+(warm, second run), at 7× the speed.
+
+## Why the scores can be trusted
+
+<AccordionGroup>
+  <Accordion title="Scores cannot hallucinate — they aren't generated">
+    The score is deterministic arithmetic over scraped profile data. No LLM writes a
+    number, a candidate fact, or a ranking. Identical inputs produce bit-identical
+    scores, verified on every backtest run.
+  </Accordion>
+  <Accordion title="The LLM touches exactly one thing: reading your JD">
+    Temperature 0, forced structured output, schema-validated, prompt-injection
+    guarded — and its extraction is shown to you as chips *before* the search runs, so
+    a misread JD is visible and correctable. The extractor is also blinded: it never
+    knows how many results are wanted or what threshold applies, so it can't drift
+    toward manufacturing 85s.
+  </Accordion>
+  <Accordion title="Every fact has provenance, every decision has a receipt">
+    Candidate data comes verbatim from the Harvest profile scrape. A rejection is a
+    code; a score decomposes into named subscores; the scarcity report names what's
+    binding.
+  </Accordion>
+  <Accordion title="A regression backtest guards every scoring change">
+    `npm run backtest` (in `backend/`) runs the full scoring engine against labeled
+    golden-set fixtures — gate correctness, qualified/reject score separation, and
+    cross-run determinism — locally, with no API keys, failing the build on any
+    regression.
+  </Accordion>
+  <Accordion title="Known limitations, stated plainly">
+    Years of experience is estimated from summed role durations (overlapping roles can
+    overcount — the gate carries a one-year margin for this). The seniority ladder is
+    generic, not yet sector-aware. Embedding similarity is confined to one clamped
+    dimension, so an odd cosine can never dominate a score. Profiles re-enrich after
+    60 days so scoring never runs against a stale employer.
+  </Accordion>
+</AccordionGroup>
+
+## The feedback loop: your verdicts train the system
+
+The **Accept / Maybe / Reject** buttons on every candidate store a per-search label —
+the ground truth for "would a recruiter contact this person?" As labels accumulate,
+they calibrate the system to your team's standards:
+
+- **Threshold calibration** — "85" is re-derived per role family as the score above
+  which your recruiters actually accept most profiles.
+- **Weight fitting** — dimension weights are refit against your accept/reject
+  decisions (a transparent regression over the stored subscores, not a black box).
+- **Golden sets** — labeled real candidates replace synthetic backtest fixtures, so
+  every future scoring change is tested against your recruiters' actual judgments.
+
+Recalibration is periodic and inspectable — weights change in reviewed batches, each
+rubric version stays locked to its runs, and "why did this score change?" always has
+an answer.

@@ -22,43 +22,75 @@ and shows five chips:
 
 | Chip | Required | Resolved from |
 |---|---|---|
-| Location | Yes | Metro area |
+| Location | Yes | Metro area ("Detroit, MI"), or a country for nationwide searches ("USA", "United States", "nationwide") |
 | Job Title | Yes | Role family (CFO, VP Finance, Controller, VP Operations, Plant Manager, VP Supply Chain) |
-| Years of Experience | No | Explicit or implied experience range |
+| Years of Experience | No | Explicit or implied range — spelled-out forms like "Eight (8) years or more" are understood |
 | Industry | No | Named industries or sectors |
 | Skills | No | Named skills |
 
 A chip lights up green only when the system is confident (≥70%) it resolved that field
 correctly — an unlit chip means "didn't find this, or not sure," not "ignored." The two
-required chips (Location, Job Title) need to confirm before the next step becomes
-available.
+required chips (Location, Job Title) need to confirm before the search starts. In
+**Clients** mode the chips shift to firm level: Location, Open Role, Headcount,
+Industry, Industry Keywords.
 
 **Suggestions** above the text box are generated from your organization's seeded role
 families crossed with example metros — click one to fill the box and start from there.
 
-**Attach a job description**: the paperclip icon accepts `.txt` files directly (their
-contents get appended to the text box). PDF and DOCX extraction isn't wired up yet — for
-now, paste the text directly.
+**Attach a job description**: the paperclip icon accepts `.pdf`, `.docx`, `.txt`, and
+`.md`. PDF and DOCX files are converted to text server-side; a scanned image-only PDF
+returns a clear error (OCR isn't supported yet) rather than garbage.
 
 If you see a banner about `ANTHROPIC_API_KEY` needing a real value, see
 [API Keys](/guides/api-keys) — this is the one required provider whose calibration
 depends on it directly.
+
+## Running a search
+
+When both required chips confirm, the scan starts and you land on the run console. A
+candidate search moves through these stages, live:
+
+1. **Pool search** — your workspace's already-enriched candidates are searched
+   semantically first. Warm matches cost nothing and arrive already enriched.
+2. **LinkedIn search** — Google X-ray queries built from the extracted criteria.
+3. **Profile enrichment** — HarvestAPI scrapes each new profile (cached for 60 days;
+   re-surfaced profiles are free). Anonymized "LinkedIn Member" results are dropped
+   before they cost anything.
+4. **Scoring & ranking** — hard gates, then a weighted rubric compiled from your job
+   description. See [Search Quality & Scoring](/guides/search-quality).
+
+The pipeline loops — searching deeper result pages — until it holds at least 10
+enriched candidates scoring 85+ (or your requested count, if higher), or its budget
+is spent.
+
+When the scan completes you'll see either an economics line ("16 qualified at 85+ ·
+$0.61 total · $0.04 per qualified") or a **scarcity report**: how many qualified, how
+many sit just below the bar, and which constraint is binding (e.g. "under the
+experience bar: 12 rejected"). A short result set is a diagnosis, not a silence.
+
+Each candidate row shows a tier badge (**A** 85+, **B** 70–84, **C** 55–69, **D**
+below) alongside signal chips. Click a row for the full profile — and use the
+**Accept / Maybe / Reject** buttons in the panel to record your judgment. These labels
+are the calibration data that tunes thresholds and scoring weights to your team's
+actual standards over time.
+
+**Find more** re-runs the pipeline deeper on the same scan; **CSV** exports the ranked
+list (subject to your workspace's export policy).
+
+## Bulk search
+
+`/bulk` accepts up to 10 job descriptions per batch — paste them, or upload `.json`,
+`.csv`, `.md`, or `.txt` — and runs each as its own scan, two at a time. Each scan gets
+the same qualification loop and quality report as a single search.
 
 ## Sidebar navigation
 
 | Item | What it does |
 |---|---|
 | **New search** | The calibrate screen described above. |
-| **Scans** | Coming soon — the live run console and lead list land once the sourcing/scoring orchestration is wired up. |
-| **Firms** | Coming soon — firm profiles and mandate tables, populated once a scan has run. |
+| **Scans** | Past searches with live run consoles, ranked candidates, and quality reports. |
+| **Companies / People** | The workspace's accumulated firm and candidate pools, deduped across scans. |
 | **Credentials** | Add, rotate, and deactivate API keys. See [API Keys](/guides/api-keys). |
-| **Gates** | Coming soon — configure whether each stage of a scan pauses for approval or proceeds automatically. |
-| **Cost** | Coming soon — spend per scan, cache-hit rate, and provider cost breakdowns. |
+| **Gates** | Configure whether each stage of a scan pauses for approval or proceeds automatically. |
 
-Click your name at the bottom of the sidebar to sign out.
-
-## What "coming soon" means in practice
-
-Pages marked coming soon render a plain, consistent placeholder rather than a broken
-page or a 404 — each one names the spec section and phase it corresponds to, so it's
-clear what's intentionally not built yet versus actually broken.
+Click your name at the bottom of the sidebar to switch workspaces or sign out.

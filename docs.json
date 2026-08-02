@@ -16,23 +16,18 @@
     "groups": [
       {
         "group": "Get Started",
-        "pages": ["introduction", "quickstart"]
+        "pages": [
+          "introduction",
+          "quickstart"
+        ]
       },
       {
         "group": "Guides",
         "pages": [
           "guides/using-the-app",
+          "guides/search-quality",
           "guides/authentication",
           "guides/api-keys"
-        ]
-      },
-      {
-        "group": "API Reference",
-        "pages": [
-          "api-reference/introduction",
-          "api-reference/auth",
-          "api-reference/intake",
-          "api-reference/credentials"
         ]
       }
     ]

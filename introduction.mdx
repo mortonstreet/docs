@@ -5,8 +5,8 @@ description: "What Revcenter does and who it's for"
 
 Revcenter turns a plain-language description of a role into a validated candidate search:
 a recruiter or deal-team member describes who they're looking for, the system extracts
-structured search criteria, and (as the orchestration layer comes online) sources and
-scores candidates against those criteria.
+structured search criteria, then sources, enriches, and scores candidates against those
+criteria until it holds a set of qualified profiles — or tells you exactly why it can't.
 
 The product is built around three ideas:
 
@@ -16,10 +16,11 @@ The product is built around three ideas:
     description and shows you exactly what it understood — location, job title, years of
     experience, industry, skills — so you can correct it before spending anything.
   </Card>
-  <Card title="Numbers come from SQL, not the model" icon="calculator">
-    The LLM never produces a score. It extracts data and writes short rationale prose.
-    Every ranking, every difficulty score, every dollar figure is computed in Postgres,
-    versioned, and auditable.
+  <Card title="Scores come from code, not the model" icon="calculator">
+    The LLM never produces a score. It reads the job description once, at temperature 0.
+    Every candidate score is deterministic arithmetic over verified profile data —
+    reproducible, decomposable into named subscores, and covered by a regression
+    backtest. Rejections are machine-readable codes, never vibes.
   </Card>
   <Card title="Keys live in the database" icon="key">
     API keys for Harvest, Serper, Anthropic, and Prospeo can be rotated from the
@@ -30,19 +31,25 @@ The product is built around three ideas:
 
 ## Where things stand
 
-Revcenter is being built in phases. Today, the following are real and working:
+Today, the following are real and working:
 
 - **Sign up, log in, organizations** — email/password auth with verification, password
   reset, and multi-user organizations with invitations.
-- **Calibrate screen** (`/intake`) — describe a role in your own words or paste a job
-  description; the system extracts structured criteria and shows you which parts it's
-  confident about.
+- **Calibrate screen** (`/intake`) — describe a role in your own words, paste a job
+  description, or attach a PDF/DOCX; the system extracts structured criteria and shows
+  you which parts it's confident about.
+- **Candidate search, end to end** — semantic pool search over your already-enriched
+  candidates, Google X-ray discovery, HarvestAPI enrichment, hard gates + weighted
+  scoring, and a qualification loop that keeps searching until it holds at least 10
+  enriched candidates at 85+ (or explains what's binding). See
+  [Search Quality & Scoring](/guides/search-quality).
+- **Client mode** — firm-level discovery with an approval gate before the paid
+  org-chart scan.
+- **Bulk search** — up to 10 job descriptions queued as concurrent searches.
+- **Verdict labels** — accept / maybe / reject on any candidate, feeding threshold and
+  weight calibration.
 - **Credentials** (`/admin/credentials`) — add, rotate, and deactivate API keys for the
   providers the system depends on, encrypted at rest.
-
-Scans, firm profiles, and outreach sequencing are still landing — see
-[Using the App](/guides/using-the-app) for what's live today versus what's still marked
-"coming soon" in the product itself.
 
 ## Where to go next
 
@@ -53,10 +60,10 @@ Scans, firm profiles, and outreach sequencing are still landing — see
   <Card title="Using the App" icon="compass" href="/guides/using-the-app">
     Walk through the calibrate flow, admin pages, and what each does.
   </Card>
+  <Card title="Search Quality & Scoring" icon="gauge-high" href="/guides/search-quality">
+    How candidates are gated, scored, and qualified — and why the numbers can be trusted.
+  </Card>
   <Card title="Authentication" icon="lock" href="/guides/authentication">
     How sign-up, verification, organizations, and invitations work.
-  </Card>
-  <Card title="API Reference" icon="code" href="/api-reference/introduction">
-    The actual HTTP endpoints the app exposes.
   </Card>
 </CardGroup>
