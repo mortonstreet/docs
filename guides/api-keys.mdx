@@ -1,60 +1,100 @@
 ---
-title: "API Keys & Credentials"
-description: "Managing the keys Revcenter depends on"
+title: "Integrations & Credits"
+description: "What's included with Revcenter, and which of your own tools you can connect"
 ---
 
-The **Credentials** page (`/admin/credentials`) manages the API keys the app calls out
-to. Keys saved here take effect **immediately** — no Vercel environment variable to set,
-no redeploy.
+The **Credentials** page (`/settings/admin/credentials`) has two halves: the capabilities
+Revcenter runs for you, and the third-party tools you connect with your own account.
 
-## The providers
+## Included with Revcenter
 
-| Provider | Used for | Required |
-|---|---|---|
-| Harvest API | LinkedIn company, job, and profile data | Yes |
-| Serper | Google search dorks | Yes |
-| Anthropic | Criteria extraction (the calibrate screen) + rationale | Yes |
-| Supabase | Database, storage, realtime | Yes — infrastructure, not managed here |
-| Prospeo | Email / mobile enrichment waterfall | No |
-| HeyReach | LinkedIn sequencer | No — not wired up yet |
-| SmartLead | Email sequencer | No — not wired up yet |
+These run on the launched RevCenter API. There's nothing to configure and no vendor key
+to manage — usage draws down your workspace's credits.
 
-Each row on the Credentials page shows a real logo (via logo.dev), the provider's
-purpose, and a status:
+| Capability | What it does |
+|---|---|
+| Web search | Finds candidate and company profiles across the open web |
+| LinkedIn enrichment | Full profile and company data behind every qualified match |
+| AI scoring | Reads your prompt into criteria, then scores and ranks every match |
+| Platform storage | Database, storage, and realtime updates |
 
-- **`db-managed`** — an active key is stored, encrypted, in the database.
-- **`.env`** — no database key, but the corresponding environment variable is set on the
-  server (e.g. `HARVEST_API_KEY`). Still usable; just not rotatable from this page yet.
-- **`not configured`** — neither. Adapters that need this provider will fail clearly
-  rather than silently degrading.
+The public API is available at `https://api.revcenter.ai/v1` for customer software,
+agents, MCP wrappers, and direct HTTP clients. See [RevCenter API v1](/guides/revcenter-api-v1)
+for bearer-token auth, scopes, rate limits, and examples.
+
+## Integrations
+
+Connect these with your own account. They bill to you directly and never consume credits.
+
+<CardGroup cols={3}>
+  <Card title="Prospeo" href="https://prospeo.io">
+    <img
+      src="https://img.logo.dev/prospeo.io?token=pk_XGsHXJ1DTDCWMCAchk6msQ&size=96&format=png"
+      alt="Prospeo"
+      width="40"
+      height="40"
+    />
+    Email and mobile enrichment waterfall, run from the **Enrich** action on a finished
+    search.
+  </Card>
+  <Card title="HeyReach" href="https://heyreach.io">
+    <img
+      src="https://img.logo.dev/heyreach.io?token=pk_XGsHXJ1DTDCWMCAchk6msQ&size=96&format=png"
+      alt="HeyReach"
+      width="40"
+      height="40"
+    />
+    LinkedIn sequencer. Push a qualified list straight into a connection campaign.
+  </Card>
+  <Card title="SmartLead" href="https://smartlead.ai">
+    <img
+      src="https://img.logo.dev/smartlead.ai?token=pk_XGsHXJ1DTDCWMCAchk6msQ&size=96&format=png"
+      alt="SmartLead"
+      width="40"
+      height="40"
+    />
+    Email sequencer. Launch outreach against enriched contacts without an export step.
+  </Card>
+</CardGroup>
+
+Each integration shows its status:
+
+- **`connected`** — an active key is stored, encrypted, for your workspace.
+- **`not connected`** — nothing saved. Features that need it say so rather than silently
+  degrading.
 
 ## Adding or rotating a key
 
-Click **Add key**, paste the key, and save. Rotating a key doesn't overwrite the old
-one — the previous key is deactivated (`is_active = false`, `retired_at` set) and a new
-row is inserted, so there's an audit trail of every key that was ever active.
+Click **Add key**, paste the key, and save. Rotating doesn't overwrite the old key — the
+previous one is deactivated (`is_active = false`, `retired_at` set) and a new row is
+inserted, so there's an audit trail of every key that was ever active.
 
 **Deactivate** requires a confirm click (the button becomes Confirm / Cancel) before it
 takes effect — no accidental one-click removal of a working key.
 
+## Credits
+
+Everything under *Included with Revcenter* is metered in credits, shown on
+**Settings → General**. The balance is expressed as the work it covers rather than a bare
+number, so you can see what's left in searches, enrichments, and scoring instead of
+guessing.
+
+Two things worth knowing:
+
+- **Integrations never consume credits.** You already pay Prospeo, HeyReach, and SmartLead
+  directly; charging credits on top would bill you twice.
+- **A search that runs out mid-flight finishes its current stage before stopping.** You
+  get a complete, scored result set — smaller than you asked for, with a note explaining
+  why — rather than profiles found but left un-enriched.
+
 ## How this stays secure
 
-- Keys are encrypted with **AES-256-GCM** before they ever touch the database
-  (`lib/crypto.ts`), using a server-only `CREDENTIAL_ENCRYPTION_KEY`.
+- Keys are encrypted with **AES-256-GCM** before they ever touch the database, using a
+  server-only `CREDENTIAL_ENCRYPTION_KEY`.
 - The browser never receives a key back in plaintext — only a masked hint like
   `px_test_••••2345`, generated at save time and never re-derivable from the stored
   ciphertext.
-- Decryption happens exclusively in server-side code
-  (`lib/domain/credentials.getProviderApiKey`), which resolves a database-stored key
-  first and only falls back to the environment variable if nothing is active in the
-  database.
-- Every credential is scoped to your organization — the same encrypted key isn't shared
-  across organizations, and the lookup always goes through your current session.
-
-## Which endpoints actually consume a saved key today
-
-As of this writing, only **Anthropic** is wired into a real code path
-(`lib/providers/anthropic.ts`, used by the calibrate screen's extraction call). Harvest
-and Serper keys save and encrypt correctly, but nothing in the app calls those APIs yet —
-their provider adapters land in a later phase. Once they do, they'll automatically pick
-up whatever's saved here with no additional wiring.
+- Decryption happens exclusively in server-side code, which resolves your workspace's own
+  key and never shares it across workspaces.
+- Every credential is scoped to your organization, and the lookup always goes through your
+  current session.

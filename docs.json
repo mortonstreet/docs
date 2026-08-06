@@ -31,9 +31,11 @@
         "pages": [
           "guides/using-the-app",
           "guides/search-quality",
+          "guides/recruiter-ontology",
           "guides/account-settings",
           "guides/authentication",
-          "guides/api-keys"
+          "guides/api-keys",
+          "guides/revcenter-api-v1"
         ]
       }
     ]

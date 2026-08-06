@@ -1,0 +1,268 @@
+---
+title: Recruiter Ontology
+description: Versioned market packs, reviewed recruiting concepts, and proposal workflows.
+---
+
+The recruiter ontology is the source of truth for search intelligence. Boolean strings,
+LLM suggestions, job descriptions, and recruiter feedback are evidence or proposals until
+they are reviewed and published into a market pack.
+
+## Core Objects
+
+- `concepts`: canonical recruiting concepts such as titles, credentials, skills, employer archetypes, and hard exclusions.
+- `terms`: display text and normalized keyword forms attached to concepts.
+- `markets`: parent and child recruiting markets.
+- `market_pack_versions`: immutable published market-pack releases.
+- `market_terms`: concept terms with market-specific treatments such as `hard_match`, `soft_match`, or `hard_exclusion`.
+- `evidence`: source-backed observations for terms and relationships.
+- `ontology_proposals`: tenant or market-scoped suggestions awaiting review.
+- `approval_decisions`: immutable reviewer decisions.
+- `candidate_feature_snapshots`: evidence-backed feature matches captured during scan scoring.
+- `ontology_feedback_events`: recruiter verdicts and reason codes tied back to a scan and candidate.
+- `ontology_term_performance`: aggregate accept/reject/maybe counters by market, pack version, term, and treatment.
+- `ontology_evaluation_sets` and `ontology_evaluation_labels`: offline regression sets for market-pack quality.
+
+## Normalization
+
+Matching is case-insensitive by default but punctuation is preserved:
+
+```text
+C++      -> c++
+C#       -> c#
+.NET     -> .net
+Node.js  -> node.js
+```
+
+Use the helper endpoint to preview normalization:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/normalize \
+  -H "Content-Type: application/json" \
+  -d '{"value":"SAP S/4HANA"}'
+```
+
+## Seed Launch Markets
+
+The launch seed creates six publishable market packs:
+
+- `capital-markets-engineering-us`
+- `software-engineering-us`
+- `data-ai-us`
+- `healthcare-nursing-us`
+- `sales-business-development-us`
+- `wealth-management-us`
+
+Run migrations first, then seed:
+
+```bash
+pnpm --dir backend db:migrate
+pnpm --dir backend ontology:seed
+```
+
+Or seed through the internal API as a RevCenter team user:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/seed/launch-market-packs \
+  -X POST
+```
+
+The wealth-only seed endpoint is still available:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/seed/wealth-management-us \
+  -X POST
+```
+
+Fetch the latest published pack snapshot:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/markets/wealth-management-us/snapshot
+```
+
+Compile criteria into a deterministic search-plan preview:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/search-plan/compile \
+  -H "Content-Type: application/json" \
+  -d '{
+    "marketSlug": "wealth-management-us",
+    "criteria": {
+      "title_variants": ["Wealth Advisor"],
+      "metro": "San Jose, CA",
+      "years_experience": { "min": 5, "max": 12 },
+      "skills": ["Impact Investing"],
+      "exclude_companies": ["Merrill Lynch", "Edward Jones"]
+    }
+  }'
+```
+
+The response separates hard requirements, soft preferences, positive signals,
+negative signals, hard exclusions, provider warnings, and Google X-ray query families.
+
+## Runtime Behavior
+
+Candidate intake now attempts to infer a market pack from the extracted criteria. For
+wealth-management searches, the API returns an `ontologyPlan` preview when
+`wealth-management-us` is published.
+
+When a candidate scan starts, the backend stores that plan in `search_plan_versions`
+and stores the compiled query families in `serper_queries`. The scan pipeline uses
+those stored queries before falling back to the older CriteriaV2 dork builder.
+
+Search chat refinements also attempt ontology compilation. If the refinement is marked
+`rescore_only`, no new Serper queries are stored.
+
+During scoring, the backend now snapshots evidence-backed ontology features into
+`candidate_feature_snapshots`. These snapshots include matched terms, failed hard
+requirements, hard exclusions, and evidence excerpts from the profile data.
+
+When a recruiter marks a candidate as `accept`, `reject`, or `maybe`, the verdict is
+written into `ontology_feedback_events` and rolled up into `ontology_term_performance`.
+This creates the first measurable learning loop without allowing feedback to silently
+rewrite a published market pack.
+
+Inspect term performance for a market:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/markets/wealth-management-us/performance
+```
+
+Inspect feature snapshots for a scan:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/scans/<scan_id>/features
+```
+
+Inspect recent feedback events:
+
+```bash
+curl "https://api.revcenter.ai/api/ontology/feedback-events?limit=50"
+```
+
+## Evaluation Sets
+
+Evaluation sets hold labeled known-good, known-bad, and ambiguous candidates for
+market-pack regression testing.
+
+Create a set:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/evaluation-sets \
+  -H "Content-Type: application/json" \
+  -d '{
+    "marketSlug": "wealth-management-us",
+    "name": "Wealth Advisor San Jose v1",
+    "status": "active"
+  }'
+```
+
+Add a label:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/evaluation-sets/<evaluation_set_id>/labels \
+  -H "Content-Type: application/json" \
+  -d '{
+    "candidateId": "<candidate_id>",
+    "label": 3,
+    "notes": "Strong current wealth-advisor fit with CFP evidence."
+  }'
+```
+
+Summarize a set, optionally against a scan ranking:
+
+```bash
+curl "https://api.revcenter.ai/api/ontology/evaluation-sets/<evaluation_set_id>/summary?scanId=<scan_id>"
+```
+
+The summary reports label counts plus ranking metrics such as `precisionAt10`,
+`precisionAt25`, `ndcgAt20`, and `meanReciprocalRank` when a scan is supplied.
+
+## Manual Market Editing
+
+Create a concept:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/concepts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conceptType": "job_title",
+    "canonicalLabel": "Wealth Advisor",
+    "status": "approved",
+    "terms": [
+      { "displayText": "Wealth Advisor" },
+      { "displayText": "Private Wealth Advisor" },
+      { "displayText": "Wealth Manager" }
+    ]
+  }'
+```
+
+Create a market:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/markets \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Wealth Management - US"}'
+```
+
+Create a draft pack version:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/markets/<market_id>/versions \
+  -H "Content-Type: application/json" \
+  -d '{"releaseNotes":"Seed wealth management pack"}'
+```
+
+Attach reviewed terms to the pack:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/market-pack-versions/<version_id>/terms \
+  -H "Content-Type: application/json" \
+  -d '{
+    "termId": "<term_id>",
+    "treatment": "hard_match",
+    "approvalStatus": "approved",
+    "weight": 1
+  }'
+```
+
+## Phase Coverage
+
+The current implementation covers the backend foundation across the planned phases:
+
+```text
+Phase 0  Schema, normalization, audit objects, market-pack versioning
+Phase 1  Five launch seed market packs
+Phase 2  Criteria-to-plan compiler and provider query families
+Phase 3  Candidate feature extraction and hard-rule evidence snapshots
+Phase 4  Recruiter feedback events and term-performance rollups
+Phase 5  Tenant-scoped API surfaces for snapshots, feedback, and analytics
+```
+
+LLMs may propose mappings, but this ontology layer prevents raw model output from
+silently becoming canonical recruiting knowledge.
+
+Remaining production work is mostly breadth and UI: expert-review screens, additional
+market packs, full hybrid retrieval infrastructure, and larger regression datasets.
+
+## Deployment Smoke Test
+
+After deployment:
+
+```bash
+pnpm --dir backend db:migrate
+pnpm --dir backend ontology:seed
+```
+
+Then verify:
+
+```bash
+curl https://api.revcenter.ai/api/ontology/markets
+curl https://api.revcenter.ai/api/ontology/markets/wealth-management-us/snapshot
+curl https://api.revcenter.ai/api/ontology/search-plan/compile \
+  -H "Content-Type: application/json" \
+  -d '{"marketSlug":"wealth-management-us","criteria":{"title_variants":["Wealth Advisor"],"metro":"San Jose, CA"}}'
+```
+
+Run a wealth-advisor scan, mark one candidate accepted or rejected, then confirm rows
+exist in `candidate_feature_snapshots`, `ontology_feedback_events`, and
+`ontology_term_performance`.
