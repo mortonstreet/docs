@@ -1,0 +1,86 @@
+---
+title: "Metering"
+description: "Acquisition units, funding sources, and reading your usage."
+---
+
+## Acquisition units
+
+Billed responses report their cost inline, in the same payload as the data:
+
+```json
+{
+  "data": {},
+  "meta": {
+    "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33",
+    "usage": {
+      "operation": "data.people.profile",
+      "acquisition_units": 10000,
+      "billable_units": 10000,
+      "funding_source": "platform"
+    }
+  }
+}
+```
+
+Costs are expressed in blended **Revcenter Acquisition Units**, never in underlying provider prices:
+
+```text
+acquisition_units    = wholesale_usd × 1,000,000
+overage_billable_usd = wholesale_usd × 5
+```
+
+The unit exists so that pricing stays stable while providers change underneath. A person enrichment costs the same number of units whichever source served it.
+
+## What gets billed
+
+Only calls that actually reach a provider. Requests rejected for a missing scope, a bad body, or an exhausted rate limit never write a cost event. Neither does a `502` — if the provider call throws, nothing is billed.
+
+Web search bills at one of two rates depending on depth:
+
+| Request | Rate |
+| --- | --- |
+| `num` ≤ 10 | Shallow |
+| `num` > 10 | Deep |
+
+Asking for 100 results in one call is cheaper than ten paginated calls of 10, so prefer depth over pagination when you know you want the volume.
+
+## Funding sources
+
+Every cost event records who paid for it.
+
+<CardGroup cols={2}>
+  <Card title="platform" icon="building-columns">
+    Revcenter's own provider keys served the call. It counts as billable acquisition against the workspace.
+  </Card>
+  <Card title="workspace_byok" icon="key">
+    The workspace's own provider key served it. The activity is recorded for visibility, but the vendor spend is already yours — it is not billable overage.
+  </Card>
+</CardGroup>
+
+Which one applies is resolved per provider, per workspace, at request time. A workspace can bring its own key for one capability and use platform keys for another, and each call is attributed accordingly.
+
+## Reading usage
+
+<CodeGroup>
+
+```bash Totals
+curl https://api.revcenter.ai/v1/usage \
+  -H "Authorization: Bearer $REVCENTER_API_KEY"
+```
+
+```bash Individual events
+curl "https://api.revcenter.ai/v1/usage/costs?limit=100" \
+  -H "Authorization: Bearer $REVCENTER_API_KEY"
+```
+
+</CodeGroup>
+
+Both require the `usage:read` scope and cover **API-key activity only** — work done in the app is excluded, so these numbers reconcile against your integration and nothing else.
+
+Cost events carry the `request_id` of the call that produced them, which is how you attribute spend back to a specific request in your own logs. See [Errors](/errors#debugging).
+
+## Credits and blocked runs
+
+Platform-funded workspaces are checked for credit before any run that spends money starts — `POST /api/scans`, `POST /api/bulk`, `POST /api/scans/{id}/expand`, and campaign planning all pre-check. A workspace out of credit is stopped up front rather than part-way through a pipeline, so you never pay for a half-finished search.
+
+Contact enrichment is gated harder still: it runs only on completed searches, only on an explicit call, and only against an explicit target of `email`, `phone`, or `both`. It never happens automatically as part of a search.

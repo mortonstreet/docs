@@ -1,0 +1,101 @@
+---
+title: "Authentication"
+description: "API keys and scopes for /v1, workspace sessions for /api."
+---
+
+## API keys
+
+Every `/v1` endpoint takes a bearer token.
+
+```http
+Authorization: Bearer rvc_live_...
+```
+
+Keys authenticate your software, agents, CLIs, and MCP servers without ever exposing the underlying data-provider credentials. A key belongs to exactly one workspace, carries a fixed set of scopes, and has its own rate limit.
+
+### Provision a key
+
+```bash
+pnpm --dir backend api-key:create \
+  --workspace <workspace_id> \
+  --name "Production API" \
+  --scopes data:search:web,data:people:search,data:people:read,data:companies:search,data:companies:read,usage:read \
+  --funding-mode contract_pool \
+  --environment live \
+  --rate-limit 120
+```
+
+<Warning>
+  The raw key is printed once and never again. Put it in a secret manager before you close the terminal.
+</Warning>
+
+`--rate-limit` is requests per minute for that key, defaulting to `120`.
+
+### Scopes
+
+Each endpoint requires exactly one scope. A key missing it gets `403 insufficient_scope` — the call is rejected before any provider is touched, so nothing is billed.
+
+| Scope | Grants |
+| --- | --- |
+| `data:search:web` | `POST /v1/data/search/web` |
+| `data:people:search` | `POST /v1/data/people/search` |
+| `data:people:read` | `GET /v1/data/people/{profileId}` |
+| `data:companies:search` | `POST /v1/data/companies/search` |
+| `data:companies:read` | `GET /v1/data/companies/{companyId}` |
+| `usage:read` | `GET /v1/usage`, `GET /v1/usage/costs` |
+| `billing:read` | Billing reads |
+| `searches:write`, `searches:read` | Reserved for search endpoints |
+| `feedback:write` | Reserved for feedback submission |
+| `*` | Everything |
+
+Grant the narrowest set that works. A key that only enriches profiles should hold `data:people:read` and nothing else.
+
+<Note>
+  `GET /v1/health` needs a valid key but no scope, which makes it the right way to verify a key works before granting it anything.
+</Note>
+
+## Rate limits
+
+Limits are **per key**, not per user. Ten workers sharing one key share one minute-bucket; ten customers with their own keys each get their own.
+
+Every response carries the current state:
+
+| Header | Meaning |
+| --- | --- |
+| `X-RateLimit-Limit` | Requests allowed per minute for this key |
+| `X-RateLimit-Remaining` | Requests left in the current window |
+| `X-RateLimit-Reset` | Unix timestamp when the window rolls over |
+
+At the default `120/min` a key averages about 2 requests per second, with bursts allowed inside the minute. High-volume integrations should be issued a higher limit — `600/min` is roughly 10 QPS.
+
+Concurrent requests are fine. Each one authenticates the key, checks scope, resolves the workspace's provider key, calls the data source, records usage, and returns. Protection downstream is separate and independent: web search is QPS-limited, and profile enrichment is concurrency-limited.
+
+Over the limit returns `429 rate_limited`. Back off until `X-RateLimit-Reset`.
+
+## Request IDs
+
+Every response includes `X-Request-Id`, mirrored in `meta.request_id`. Send your own `X-Request-Id` and it is echoed back instead of generated, which makes correlating your logs with cost events straightforward — the same ID appears on the matching row in `GET /v1/usage/costs`.
+
+## Workspace sessions
+
+The `/api` endpoints authenticate differently. They expect a signed-in workspace session, sent as a browser cookie, and act on that session's **active workspace**. Requests must include credentials:
+
+```js
+await fetch("https://api.revcenter.ai/api/scans", { credentials: "include" })
+```
+
+Three rules follow from how the session is resolved, and they explain most unexpected responses:
+
+<AccordionGroup>
+  <Accordion title="Everything is workspace-scoped">
+    A record belonging to another workspace returns `404`, not `403`. Existence and access are deliberately indistinguishable, so you cannot probe for IDs you do not own.
+  </Accordion>
+  <Accordion title="Write actions need an operator role">
+    Running a search, enriching, publishing a campaign, and launching all require operate permission. Read endpoints only require a session.
+  </Accordion>
+  <Accordion title="Frozen accounts are blocked">
+    A frozen account can sign in but every `/api` route except `/api/me` returns `403` with code `frozen`.
+  </Accordion>
+</AccordionGroup>
+
+One endpoint is public: `GET /api/shares/{token}` takes no authentication at all. The token *is* the credential, so treat share URLs as secrets.

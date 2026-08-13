@@ -1,69 +1,86 @@
 ---
-title: "Introduction"
-description: "What Revcenter does and who it's for"
+title: "Revcenter API"
+description: "Search, enrich, and activate people and companies over HTTP."
 ---
 
-Revcenter turns a plain-language description of a role into a validated candidate search:
-a recruiter or deal-team member describes who they're looking for, the system extracts
-structured search criteria, then sources, enriches, and scores candidates against those
-criteria until it holds a set of qualified profiles — or tells you exactly why it can't.
+The Revcenter API finds people and companies, enriches them, and pushes them into outbound sequences. Everything the product does is available over HTTP.
 
-The product is built around three ideas:
+```bash
+curl https://api.revcenter.ai/v1/data/search/web \
+  -H "Authorization: Bearer $REVCENTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "query": "site:linkedin.com/in wealth advisor San Jose CFP", "num": 10 }'
+```
 
-<CardGroup cols={3}>
-  <Card title="Calibrate first" icon="sliders">
-    Before any paid API call runs, the system extracts structured criteria from your
-    description and shows you exactly what it understood — location, job title, years of
-    experience, industry, skills — so you can correct it before spending anything.
-  </Card>
-  <Card title="Scores come from code, not the model" icon="calculator">
-    The LLM never produces a score. It reads the job description once, at temperature 0.
-    Every candidate score is deterministic arithmetic over verified profile data —
-    reproducible, decomposable into named subscores, and covered by a regression
-    backtest. Rejections are machine-readable codes, never vibes.
-  </Card>
-  <Card title="Keys live in the database" icon="key">
-    API keys for Harvest, Serper, Anthropic, and Prospeo can be rotated from the
-    Credentials page and take effect immediately — no redeploy, no Vercel environment
-    variable to update.
-  </Card>
-</CardGroup>
+## Two surfaces, one host
 
-## Where things stand
-
-Today, the following are real and working:
-
-- **Sign up, log in, organizations** — email/password auth with verification, password
-  reset, and multi-user organizations with invitations.
-- **Calibrate screen** (`/intake`) — describe a role in your own words, paste a job
-  description, or attach a PDF/DOCX; the system extracts structured criteria and shows
-  you which parts it's confident about.
-- **Candidate search, end to end** — semantic pool search over your already-enriched
-  candidates, Google X-ray discovery, HarvestAPI enrichment, hard gates + weighted
-  scoring, and a qualification loop that keeps searching until it holds at least 10
-  enriched candidates at 85+ (or explains what's binding). See
-  [Search Quality & Scoring](/guides/search-quality).
-- **Client mode** — firm-level discovery with an approval gate before the paid
-  org-chart scan.
-- **Bulk search** — up to 10 job descriptions queued as concurrent searches.
-- **Verdict labels** — accept / maybe / reject on any candidate, feeding threshold and
-  weight calibration.
-- **Credentials** (`/admin/credentials`) — add, rotate, and deactivate API keys for the
-  providers the system depends on, encrypted at rest.
-
-## Where to go next
+Everything lives on `https://api.revcenter.ai`. Which prefix you call determines how you authenticate.
 
 <CardGroup cols={2}>
-  <Card title="Quickstart" icon="rocket" href="/quickstart">
-    Get the app running locally against a real Postgres database.
+  <Card title="/v1 — API keys" icon="key">
+    Bearer-token endpoints for your own software, agents, and MCP tools. Scoped keys, per-key rate limits, metered per request. No cookies, no browser.
   </Card>
-  <Card title="Using the App" icon="compass" href="/guides/using-the-app">
-    Walk through the calibrate flow, admin pages, and what each does.
-  </Card>
-  <Card title="Search Quality & Scoring" icon="gauge-high" href="/guides/search-quality">
-    How candidates are gated, scored, and qualified — and why the numbers can be trusted.
-  </Card>
-  <Card title="Authentication" icon="lock" href="/guides/authentication">
-    How sign-up, verification, organizations, and invitations work.
+  <Card title="/api — workspace session" icon="browser">
+    The endpoints the Revcenter app itself runs on. Authenticated by a signed-in workspace session, scoped to that session's active workspace.
   </Card>
 </CardGroup>
+
+Both are documented here, and every endpoint page states which one it uses. The practical split: `/v1` is raw data acquisition, `/api` is the product — running searches, scoring results, and launching campaigns.
+
+<Note>
+  Campaigns are currently `/api` only. There are no bearer-token campaign endpoints yet.
+</Note>
+
+## What you can do
+
+<CardGroup cols={2}>
+  <Card title="Search" icon="magnifying-glass">
+    Query the web directly, or run a full Revcenter search: a brief in, scored and ranked people out, exportable and shareable.
+  </Card>
+  <Card title="People" icon="user">
+    Search people, enrich a profile to its full record, and browse the deduplicated contact pool your searches have built up.
+  </Card>
+  <Card title="Companies" icon="building">
+    Search companies, enrich one to its full record, and read the org chart Revcenter has assembled for it.
+  </Card>
+  <Card title="Campaigns" icon="paper-plane">
+    Turn a shortlist into an outbound sequence on Smartlead or HeyReach — planned, reviewed, published, then explicitly launched.
+  </Card>
+</CardGroup>
+
+## Response shape
+
+Every `/v1` endpoint returns the same envelope. Data goes in `data`, everything else in `meta`.
+
+```json
+{
+  "data": {},
+  "meta": {
+    "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33",
+    "usage": {
+      "operation": "data.people.profile",
+      "acquisition_units": 10000,
+      "billable_units": 10000,
+      "funding_source": "platform"
+    }
+  }
+}
+```
+
+`meta.usage` is present on billed endpoints, so you always know what a call cost at the moment it returns. See [Metering](/metering).
+
+The `/api` endpoints return their payload directly, without an envelope — they were built for the app's own UI. Their error shape is flatter too; both are documented in [Errors](/errors).
+
+## Long-running work
+
+Searches and campaigns do not block. `POST /api/scans`, `POST /api/bulk`, and the campaign publish endpoints all return an ID immediately and keep working in the background. Poll the corresponding `GET` endpoint for status.
+
+A search that produced results finishes `complete` even if a later stage errored — partial results are never discarded.
+
+## Agents and MCP
+
+The `/v1` API is built to be wrapped as tools: bearer auth, scoped keys, JSON bodies, deterministic paths, structured responses, a request ID on everything, and usage reported inline. It is not itself an MCP server — wrap these endpoints as tools like `web_search`, `people_search`, `person_enrich`, and `company_enrich`.
+
+<Card title="Get authenticated" icon="arrow-right" href="/authentication">
+  Provision a key, pick scopes, and understand rate limits.
+</Card>

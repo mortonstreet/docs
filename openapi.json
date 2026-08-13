@@ -1,0 +1,2132 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Revcenter API",
+    "description": "Search, enrich, and activate people and companies. Two authentication surfaces share one host: the bearer-token API under `/v1` for server-to-server and agent use, and the workspace-session API under `/api` that the Revcenter app itself runs on.",
+    "version": "2026-08-12"
+  },
+  "servers": [
+    {
+      "url": "https://api.revcenter.ai",
+      "description": "Production"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    { "name": "Search", "description": "Web search, search runs, results, exports, and shareable shortlists." },
+    { "name": "People", "description": "Person search, profile enrichment, and the workspace contact pool." },
+    { "name": "Companies", "description": "Company search, company enrichment, and org-chart people." },
+    { "name": "Campaigns", "description": "Plan, publish, and launch outbound sequences on Smartlead and HeyReach." },
+    { "name": "Account", "description": "Health, usage totals, and cost events." }
+  ],
+  "paths": {
+    "/v1/data/search/web": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Web search",
+        "description": "Runs a web search and returns organic results plus the raw provider response. Billed per request as a metered acquisition event.\n\nRequires the `data:search:web` scope.",
+        "operationId": "searchWeb",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/IdempotencyKeyHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The search query. `q` is accepted as an alias.",
+                    "examples": ["site:linkedin.com/in wealth advisor San Jose CFP"]
+                  },
+                  "surface": {
+                    "$ref": "#/components/schemas/SearchSurface"
+                  },
+                  "endpoint": {
+                    "$ref": "#/components/schemas/SearchSurface"
+                  },
+                  "num": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 10,
+                    "description": "Results per page. Requests of 10 or fewer bill at the shallow rate; more than 10 bills at the deep rate."
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 1
+                  },
+                  "gl": { "type": "string", "description": "Country code, e.g. `us`.", "examples": ["us"] },
+                  "hl": { "type": "string", "description": "Language code, e.g. `en`.", "examples": ["en"] },
+                  "location": { "type": "string", "description": "Geographic location string passed through to the search provider." },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 160,
+                    "description": "Deduplicates billing when a request is retried. The `Idempotency-Key` header does the same thing."
+                  }
+                }
+              },
+              "examples": {
+                "linkedinSourcing": {
+                  "summary": "Sourcing query scoped to LinkedIn profiles",
+                  "value": {
+                    "query": "site:linkedin.com/in wealth advisor San Jose CFP impact investing",
+                    "num": 10,
+                    "surface": "search",
+                    "gl": "us",
+                    "hl": "en"
+                  }
+                },
+                "news": {
+                  "summary": "News surface",
+                  "value": { "query": "series B fintech Toronto", "surface": "news", "num": 20 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/MeteredEnvelope" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "endpoint": { "type": "string", "examples": ["search"] },
+                            "results": {
+                              "type": "array",
+                              "description": "Organic results, when the surface returns them.",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "title": { "type": "string" },
+                                  "link": { "type": "string", "format": "uri" },
+                                  "snippet": { "type": "string" },
+                                  "position": { "type": "integer" }
+                                }
+                              }
+                            },
+                            "response": {
+                              "type": "object",
+                              "description": "The unmodified provider response, so surfaces without an `organic` array are still fully available.",
+                              "additionalProperties": true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/InsufficientScope" },
+          "424": { "$ref": "#/components/responses/ProviderUnavailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "502": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/v1/data/people/search": {
+      "post": {
+        "tags": ["People"],
+        "summary": "Search people",
+        "description": "Searches LinkedIn people by keyword, company, location, or name. At least one criterion other than `page` is required.\n\nRequires the `data:people:search` scope.",
+        "operationId": "searchPeople",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/IdempotencyKeyHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "search": { "type": "string", "maxLength": 240, "description": "Free-text keyword search.", "examples": ["wealth advisor"] },
+                  "currentCompany": { "type": "string", "maxLength": 300, "description": "Current employer name." },
+                  "companyId": {
+                    "anyOf": [{ "type": "string", "maxLength": 120 }, { "type": "integer" }],
+                    "description": "LinkedIn company identifier to scope the search to."
+                  },
+                  "location": { "type": "string", "maxLength": 180, "examples": ["San Jose, CA"] },
+                  "geoId": {
+                    "anyOf": [{ "type": "string", "maxLength": 120 }, { "type": "integer" }],
+                    "description": "LinkedIn geo identifier. More precise than `location`."
+                  },
+                  "firstName": { "type": "string", "maxLength": 120 },
+                  "lastName": { "type": "string", "maxLength": 120 },
+                  "page": { "type": "integer", "minimum": 1, "maximum": 100, "default": 1 },
+                  "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 160 }
+                }
+              },
+              "examples": {
+                "byRoleAndCity": {
+                  "summary": "Role and city",
+                  "value": { "search": "wealth advisor", "location": "San Jose, CA", "page": 1 }
+                },
+                "byCompany": {
+                  "summary": "Everyone at one employer",
+                  "value": { "currentCompany": "Merrill Lynch", "location": "California" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Matching profiles, one page at a time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/MeteredEnvelope" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "profiles": {
+                              "type": "array",
+                              "items": { "$ref": "#/components/schemas/PersonSearchResult" }
+                            },
+                            "pagination": { "$ref": "#/components/schemas/ProviderPagination" },
+                            "response": { "type": "object", "additionalProperties": true }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/InsufficientScope" },
+          "424": { "$ref": "#/components/responses/ProviderUnavailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "502": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/v1/data/people/{profileId}": {
+      "get": {
+        "tags": ["People"],
+        "summary": "Enrich a person",
+        "description": "Returns a full LinkedIn profile.\n\nThe path segment is interpreted for you: a public identifier (`dahn-lincoln`), a numeric profile ID, or a URL-encoded LinkedIn URL all work. Query parameters override the path when you want to be explicit.\n\nRequires the `data:people:read` scope.",
+        "operationId": "enrichPerson",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "description": "Public identifier, numeric profile ID, or URL-encoded LinkedIn profile URL.",
+            "schema": { "type": "string" },
+            "example": "dahn-lincoln"
+          },
+          {
+            "name": "linkedin_url",
+            "in": "query",
+            "required": false,
+            "description": "Full LinkedIn profile URL. Takes precedence over the path segment. `url` is accepted as an alias.",
+            "schema": { "type": "string", "format": "uri" }
+          },
+          {
+            "name": "public_identifier",
+            "in": "query",
+            "required": false,
+            "description": "LinkedIn public identifier, used when the path segment is a placeholder.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "profile_id",
+            "in": "query",
+            "required": false,
+            "description": "Numeric LinkedIn profile ID.",
+            "schema": { "type": "string" }
+          },
+          { "$ref": "#/components/parameters/IdempotencyKeyHeader" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The enriched profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/MeteredEnvelope" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "profile": { "$ref": "#/components/schemas/PersonProfile" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/InsufficientScope" },
+          "424": { "$ref": "#/components/responses/ProviderUnavailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "502": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/v1/data/companies/search": {
+      "post": {
+        "tags": ["Companies"],
+        "summary": "Search companies",
+        "description": "Searches LinkedIn companies by keyword, location, or headcount band. At least one criterion other than `page` is required.\n\nRequires the `data:companies:search` scope.",
+        "operationId": "searchCompanies",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/IdempotencyKeyHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "search": { "type": "string", "maxLength": 240, "examples": ["Merrill Lynch"] },
+                  "location": { "type": "string", "maxLength": 180, "examples": ["California"] },
+                  "geoId": {
+                    "anyOf": [{ "type": "string", "maxLength": 120 }, { "type": "integer" }],
+                    "description": "LinkedIn geo identifier."
+                  },
+                  "companySize": {
+                    "type": "string",
+                    "maxLength": 160,
+                    "description": "Headcount band as the provider expresses it.",
+                    "examples": ["51-200"]
+                  },
+                  "page": { "type": "integer", "minimum": 1, "maximum": 100, "default": 1 },
+                  "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 160 }
+                }
+              },
+              "examples": {
+                "byName": {
+                  "summary": "Named firm in a region",
+                  "value": { "search": "Merrill Lynch", "location": "California", "page": 1 }
+                },
+                "bySize": {
+                  "summary": "Sector plus headcount band",
+                  "value": { "search": "registered investment advisor", "companySize": "51-200" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Matching companies, one page at a time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/MeteredEnvelope" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "companies": {
+                              "type": "array",
+                              "items": { "$ref": "#/components/schemas/CompanySearchResult" }
+                            },
+                            "pagination": { "$ref": "#/components/schemas/ProviderPagination" },
+                            "response": { "type": "object", "additionalProperties": true }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/InsufficientScope" },
+          "424": { "$ref": "#/components/responses/ProviderUnavailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "502": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/v1/data/companies/{companyId}": {
+      "get": {
+        "tags": ["Companies"],
+        "summary": "Enrich a company",
+        "description": "Returns a full company record. The path segment is treated as the LinkedIn universal name unless you pass `search`.\n\nRequires the `data:companies:read` scope.",
+        "operationId": "enrichCompany",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "path",
+            "required": true,
+            "description": "LinkedIn universal name, e.g. `merrill-lynch`.",
+            "schema": { "type": "string" },
+            "example": "merrill-lynch"
+          },
+          {
+            "name": "universal_name",
+            "in": "query",
+            "required": false,
+            "description": "Explicit universal name. Overrides the path segment.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Resolve the company by name search instead of by universal name. Takes precedence when present.",
+            "schema": { "type": "string" }
+          },
+          { "$ref": "#/components/parameters/IdempotencyKeyHeader" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The enriched company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    { "$ref": "#/components/schemas/MeteredEnvelope" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "company": { "$ref": "#/components/schemas/CompanyProfile" }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/InsufficientScope" },
+          "424": { "$ref": "#/components/responses/ProviderUnavailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "502": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "tags": ["Account"],
+        "summary": "Health check",
+        "description": "Confirms the API is reachable and your key authenticates. Requires a valid key but no scope, and is never billed.",
+        "operationId": "health",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "The API is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "ok": { "type": "boolean", "examples": [true] },
+                        "version": { "type": "string", "examples": ["v1"] }
+                      }
+                    },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/usage": {
+      "get": {
+        "tags": ["Account"],
+        "summary": "Usage totals",
+        "description": "Lifetime totals for every API-key request in the workspace. App activity is excluded — only calls made with an API key are counted.\n\nRequires the `usage:read` scope.",
+        "operationId": "usageTotals",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Aggregate usage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "requests": { "type": "integer", "examples": [1842] },
+                        "acquisition_units": { "type": "integer", "description": "Blended Revcenter Acquisition Units.", "examples": [18420000] },
+                        "billable_units": { "type": "integer", "examples": [18420000] },
+                        "billable_amount_usd": { "type": "number", "examples": [92.1] }
+                      }
+                    },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/InsufficientScope" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/usage/costs": {
+      "get": {
+        "tags": ["Account"],
+        "summary": "Cost events",
+        "description": "The individual metered events behind the totals, newest first. Match `request_id` against the `meta.request_id` of the call that produced it.\n\nRequires the `usage:read` scope.",
+        "operationId": "usageCosts",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Events to return, 1–500.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cost events.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": { "type": "integer" },
+                              "request_id": { "type": "string", "format": "uuid" },
+                              "operation": { "type": "string", "examples": ["data.people.profile"] },
+                              "funding_source": { "$ref": "#/components/schemas/FundingSource" },
+                              "acquisition_units": { "type": "integer" },
+                              "billable_units": { "type": "integer" },
+                              "billable_amount_usd": { "type": "number" },
+                              "created_at": { "type": "string", "format": "date-time" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/InsufficientScope" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/api/intake": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Extract criteria",
+        "description": "Turns a job description or plain-language brief into structured criteria, without running a search. Use the returned `criteria` as the body of `POST /api/scans` once a human has reviewed it.",
+        "operationId": "extractCriteria",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["rawInput"],
+                "properties": {
+                  "rawInput": { "type": "string", "description": "The job description or brief.", "examples": ["Clinic manager in Lévis, Québec. French required. 5+ years managing a multi-site clinic. Find 25."] },
+                  "mode": { "$ref": "#/components/schemas/ScanMode" },
+                  "model": { "$ref": "#/components/schemas/ExtractModel" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Structured criteria plus coverage diagnostics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "criteria": { "$ref": "#/components/schemas/Criteria" },
+                    "entityCoverage": {
+                      "type": "object",
+                      "description": "Which criteria dimensions the input actually pinned down — drives the confirmation chips in the app.",
+                      "additionalProperties": true
+                    },
+                    "familyUnresolved": {
+                      "type": "boolean",
+                      "description": "True when the role sits outside the known role-family taxonomy. The role name is preserved as a title variant."
+                    },
+                    "familySuggestions": { "type": "array", "items": { "type": "string" } },
+                    "ontologyPlan": { "type": ["object", "null"], "additionalProperties": true },
+                    "rawToolInput": { "type": "object", "additionalProperties": true }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/scans": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Run a search",
+        "description": "Creates a search and starts the pipeline. Returns immediately with a `scanId` — the run continues in the background, so poll `GET /api/scans/{id}` for status and results.\n\nA target count written into `rawInput` (\"find 25\") is parsed out and used as the run's target.",
+        "operationId": "createScan",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["criteria"],
+                "properties": {
+                  "criteria": { "$ref": "#/components/schemas/Criteria" },
+                  "rawInput": { "type": "string", "description": "The original brief. Kept for provenance and parsed for a target count." },
+                  "mode": { "$ref": "#/components/schemas/ScanMode" },
+                  "projectId": { "type": ["string", "null"], "description": "Attach the run to a client project so its context and disqualifiers apply." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The run was created and is executing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scanId": { "type": "string", "format": "uuid" },
+                    "ontologyPlan": { "type": ["object", "null"], "additionalProperties": true }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" }
+        }
+      },
+      "get": {
+        "tags": ["Search"],
+        "summary": "List searches",
+        "description": "The 100 most recent searches in the workspace, newest first.",
+        "operationId": "listScans",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Free-text filter. Matches both the generated title and the prompt the user actually wrote.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "sector",
+            "in": "query",
+            "required": false,
+            "description": "Restrict to one sector. Unknown values are ignored.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Searches and the sector vocabulary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scans": { "type": "array", "items": { "$ref": "#/components/schemas/ScanSummary" } },
+                    "sectors": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/scans/{id}": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Get a search",
+        "description": "The full state of one search: the record itself, per-stage run history, and ranked candidates. Client-mode searches additionally return discovered companies and decision-maker leads.\n\nPoll this while `scan.status` is `running`.",
+        "operationId": "getScan",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "The search, its runs, and its results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scan": { "$ref": "#/components/schemas/Scan" },
+                    "runs": { "type": "array", "items": { "$ref": "#/components/schemas/Run" } },
+                    "candidates": { "type": "array", "items": { "$ref": "#/components/schemas/ScoredCandidate" } },
+                    "companies": { "type": "array", "items": { "type": "object", "additionalProperties": true }, "description": "Client-mode only." },
+                    "clientLeads": { "type": "array", "items": { "type": "object", "additionalProperties": true }, "description": "Client-mode only." },
+                    "access": {
+                      "type": "object",
+                      "properties": { "canShare": { "type": "boolean" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/scans/{id}/prompt": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Get the prompt",
+        "description": "Just the prompt a search ran on — cheap enough to fetch when reopening a past search in intake to copy or rerun it.",
+        "operationId": "getScanPrompt",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "The prompt and its identifying context.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "title": { "type": ["string", "null"] },
+                    "mode": { "$ref": "#/components/schemas/ScanMode" },
+                    "rawInput": { "type": ["string", "null"] },
+                    "projectId": { "type": ["string", "null"] }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" }
+        }
+      }
+    },
+    "/api/scans/{id}/expand": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Expand a search",
+        "description": "Reruns the pipeline on an existing candidate search to pull more results against the same criteria. Returns immediately; the run continues in the background.\n\nRejected with `409` if the search is already running, or if it is a client-mode search — those re-run through approval instead.",
+        "operationId": "expandScan",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "The expansion run started.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "ok": { "type": "boolean", "examples": [true] } } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "409": { "$ref": "#/components/responses/AppConflict" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" }
+        }
+      }
+    },
+    "/api/scans/{id}/enrich": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Enrich contacts",
+        "description": "Runs the contact waterfall over a completed search to attach emails and phone numbers. This spends money, so it is deliberately gated: completed searches only, on an explicit call, with an explicit target.",
+        "operationId": "enrichScan",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["targets"],
+                "properties": {
+                  "targets": {
+                    "type": "string",
+                    "enum": ["email", "phone", "both"],
+                    "description": "What to look up."
+                  }
+                }
+              },
+              "examples": {
+                "emailsOnly": { "summary": "Emails only", "value": { "targets": "email" } },
+                "both": { "summary": "Emails and phones", "value": { "targets": "both" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Enrichment ran.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "additionalProperties": true }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" }
+        }
+      }
+    },
+    "/api/scans/{id}/candidates/{candidateId}/verdict": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Set a verdict",
+        "description": "Records a human accept / reject / maybe on one candidate. Send `null` to clear a verdict.\n\nEvery call also writes a candidate feedback event — the verdict, the reason codes, the rank the candidate was shown at, its score and subscores, and a snapshot of the criteria it was judged against. That trail is what scoring quality is measured and tuned against, so reason codes are worth sending.",
+        "operationId": "setCandidateVerdict",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ScanId" },
+          {
+            "name": "candidateId",
+            "in": "path",
+            "required": true,
+            "description": "The candidate's ID, as returned in `candidates[].candidate.id`.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "verdict": {
+                    "type": ["string", "null"],
+                    "enum": ["accept", "reject", "maybe", null],
+                    "description": "`null` clears the verdict and logs a `verdict_cleared` event."
+                  },
+                  "reasonCodes": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Why. `reason_codes` is accepted as an alias."
+                  },
+                  "notes": { "type": "string", "maxLength": 4000, "description": "Free-text note. Truncated at 4000 characters." },
+                  "source": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "default": "scan_candidate_panel",
+                    "description": "Where the verdict came from, for attribution in the feedback log."
+                  }
+                }
+              },
+              "examples": {
+                "reject": {
+                  "summary": "Reject with reasons",
+                  "value": { "verdict": "reject", "reasonCodes": ["wrong_seniority", "geo_mismatch"], "notes": "Director-level, and based in Ottawa." }
+                },
+                "clear": { "summary": "Clear a verdict", "value": { "verdict": null } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The verdict was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "verdict": { "type": ["string", "null"], "enum": ["accept", "reject", "maybe", null] }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/scans/{id}/share": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Create a share link",
+        "description": "Snapshots a shortlist into a passwordless link anyone can open — no Revcenter account needed. The snapshot is frozen at creation: later changes to the search do not alter what a recipient sees, and contact details are stripped from the public payload.\n\nOnly completed candidate searches can be shared. Scores below 80 are never shareable, whatever selection mode you use.",
+        "operationId": "createScanShare",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "selectionMode": {
+                    "type": "string",
+                    "enum": ["top_n", "all_qualified", "manual"],
+                    "default": "top_n",
+                    "description": "`top_n` takes the highest-ranked `limit` leads, `all_qualified` takes every lead at or above `minScore`, and `manual` takes exactly the `candidateIds` you name."
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "default": 20,
+                    "description": "Used by `top_n` only. Clamped to 1–500, so lists well past 80 leads are fine."
+                  },
+                  "minScore": {
+                    "type": "integer",
+                    "minimum": 80,
+                    "maximum": 100,
+                    "default": 80,
+                    "description": "Score floor. Values below 80 are raised to 80."
+                  },
+                  "candidateIds": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Required when `selectionMode` is `manual`. Capped at 500."
+                  }
+                }
+              },
+              "examples": {
+                "topTwenty": { "summary": "Top 20 by rank", "value": { "selectionMode": "top_n", "limit": 20 } },
+                "everyQualified": { "summary": "Every qualified lead", "value": { "selectionMode": "all_qualified", "minScore": 85 } },
+                "handPicked": { "summary": "A hand-picked shortlist", "value": { "selectionMode": "manual", "candidateIds": ["cand_a1b2", "cand_c3d4"] } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The share link was created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "share": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": ["string", "null"], "format": "uuid" },
+                        "url": { "type": "string", "format": "uri", "description": "The passwordless URL to send." },
+                        "createdAt": { "type": ["string", "null"], "format": "date-time" },
+                        "shared": { "type": "integer", "description": "How many leads the snapshot contains." }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "409": { "$ref": "#/components/responses/AppConflict" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/shares/{token}": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Read a shared shortlist",
+        "description": "Resolves a share token into its frozen shortlist. **No authentication** — the token is the credential, so treat share URLs as secrets.\n\nThe prompt behind the search is included so a recipient can see what was actually asked for. Each read increments the view counter. Responses are sent `Cache-Control: no-store`.",
+        "operationId": "getShare",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "description": "The share token from the link.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The shared shortlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scan": {
+                      "type": "object",
+                      "properties": {
+                        "title": { "type": ["string", "null"] },
+                        "sector": { "type": ["string", "null"] },
+                        "rawInput": { "type": ["string", "null"], "description": "The prompt the search ran on." },
+                        "createdAt": { "type": "string", "format": "date-time" }
+                      }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "shared": { "type": "integer" },
+                        "qualifiedAvailable": { "type": "integer" },
+                        "minScore": { "type": "integer" },
+                        "selectionMode": { "type": "string", "enum": ["top_n", "all_qualified", "manual"] },
+                        "leadLimit": { "type": ["integer", "null"] }
+                      }
+                    },
+                    "candidates": {
+                      "type": "array",
+                      "description": "Public candidate records. Emails and phone numbers are always null here.",
+                      "items": { "$ref": "#/components/schemas/PublicCandidate" }
+                    },
+                    "share": {
+                      "type": "object",
+                      "properties": {
+                        "createdAt": { "type": "string", "format": "date-time" },
+                        "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "410": {
+            "description": "The share link expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AppError" },
+                "examples": { "expired": { "value": { "error": "Share link expired" } } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scans/{id}/export.csv": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Export results as CSV",
+        "description": "Downloads the search's results as a CSV file, including any contact details already enriched onto them.",
+        "operationId": "exportScanCsv",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ScanId" }],
+        "responses": {
+          "200": {
+            "description": "The CSV file.",
+            "content": {
+              "text/csv": {
+                "schema": { "type": "string" },
+                "examples": {
+                  "rows": {
+                    "summary": "First rows",
+                    "value": "rank,score,first_name,last_name,role_title,company,metro,profile_url,email,phone\n1,94,Dahn,Lincoln,Wealth Advisor,Merrill Lynch,\"San Jose, CA\",https://www.linkedin.com/in/dahn-lincoln,,\n"
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" }
+        }
+      }
+    },
+    "/api/bulk": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Run a bulk batch",
+        "description": "Extracts criteria from up to 10 job descriptions and runs each as its own search, two pipelines in flight at a time. Returns immediately with a `batchId`.\n\nOne bad job description fails its own search and never the batch.",
+        "operationId": "createBulkBatch",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["items"],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "description": "Job descriptions. Entries shorter than 12 characters are dropped before the cap is applied.",
+                    "items": {
+                      "type": "object",
+                      "required": ["text"],
+                      "properties": {
+                        "text": { "type": "string", "minLength": 12, "description": "The job description." },
+                        "label": { "type": "string", "description": "Title for the resulting search. Falls back to the first 120 characters of `text`." }
+                      }
+                    }
+                  },
+                  "mode": { "$ref": "#/components/schemas/ScanMode" },
+                  "model": { "$ref": "#/components/schemas/ExtractModel" }
+                }
+              },
+              "examples": {
+                "twoRoles": {
+                  "summary": "Two roles in one batch",
+                  "value": {
+                    "items": [
+                      { "label": "Clinic Manager — Lévis", "text": "Clinic manager in Lévis, Québec. French required. 5+ years running a multi-site clinic." },
+                      { "label": "Wealth Advisor — San Jose", "text": "Wealth advisor, San Jose. CFP preferred, 7+ years, book of business." }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The batch was queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batchId": { "type": "string", "format": "uuid" },
+                    "queued": { "type": "integer", "description": "How many job descriptions were accepted." }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      },
+      "get": {
+        "tags": ["Search"],
+        "summary": "List bulk batches",
+        "description": "The 20 most recent bulk batches in the workspace, newest first.",
+        "operationId": "listBulkBatches",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Recent batches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batches": { "type": "array", "items": { "$ref": "#/components/schemas/BulkBatch" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" }
+        }
+      }
+    },
+    "/api/bulk/{id}": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Get a bulk batch",
+        "description": "One batch and every search it spawned, in submission order. Poll this to watch a batch finish.",
+        "operationId": "getBulkBatch",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The batch ID.",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The batch and its searches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": { "$ref": "#/components/schemas/BulkBatch" },
+                    "scans": { "type": "array", "items": { "$ref": "#/components/schemas/ScanSummary" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" }
+        }
+      }
+    },
+    "/api/contacts": {
+      "get": {
+        "tags": ["People"],
+        "summary": "List contacts",
+        "description": "The workspace's deduplicated person pool — everyone who has ever appeared in a search, collapsed to one record each, with paging and facet filters.\n\nRepeatable filter parameters are AND-ed across facets and OR-ed within one facet.",
+        "operationId": "listContacts",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": false, "description": "Free-text search across the pool.", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "Anything other than these values falls back to 25.",
+            "schema": { "type": "integer", "enum": [10, 25, 50, 100], "default": 25 }
+          },
+          { "name": "role", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "company", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "metro", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "sector", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "signal", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "enriched", "in": "query", "required": false, "description": "Repeatable. Filter by enrichment state.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "contact", "in": "query", "required": false, "description": "Repeatable. Filter by which contact details are present.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "minScans", "in": "query", "required": false, "description": "Only people who appeared in at least this many searches.", "schema": { "type": "integer", "minimum": 0 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of contacts with facet counts.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "additionalProperties": true }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" }
+        }
+      }
+    },
+    "/api/companies": {
+      "get": {
+        "tags": ["Companies"],
+        "summary": "List companies",
+        "description": "Every firm that has surfaced in this workspace's searches, deduplicated, with the count of people attached to each. Capped at 500 firms.",
+        "operationId": "listCompanies",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": false, "description": "Free-text filter on company name.", "schema": { "type": "string" } },
+          { "name": "company", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "location", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "sector", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "industry", "in": "query", "required": false, "description": "Repeatable.", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "headcount", "in": "query", "required": false, "description": "Repeatable headcount band.", "schema": { "type": "array", "items": { "type": "string" } } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Companies with facet counts.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "additionalProperties": true }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/companies/{id}/people": {
+      "get": {
+        "tags": ["Companies"],
+        "summary": "List people at a company",
+        "description": "The org chart Revcenter has assembled for one firm: everyone attached to it across this workspace's searches, deduplicated. Capped at 200 rows.",
+        "operationId": "listCompanyPeople",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The firm ID.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "People at the company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "people": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "title": { "type": ["string", "null"], "description": "The title as it appears on the org chart." },
+                          "candidate": { "$ref": "#/components/schemas/Candidate" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/campaigns/plan": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Plan a campaign",
+        "description": "Step one of two. Turns a plain-language brief plus a set of searches into a reviewable campaign spec, and preflights the workspace against it.\n\nNothing is pushed to Smartlead or HeyReach here. The `issues` array is the point: it surfaces every setup problem — missing API key, no connected inbox or sender, no eligible leads — before anyone can publish.",
+        "operationId": "planCampaign",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["prompt", "scanIds"],
+                "properties": {
+                  "prompt": { "type": "string", "description": "What the campaign should do, in plain language.", "examples": ["Four-touch LinkedIn sequence for the Lévis clinic managers, warm and short, two days apart."] },
+                  "scanIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "format": "uuid" },
+                    "description": "The searches to draw leads from. Searches outside your workspace are ignored."
+                  },
+                  "model": { "$ref": "#/components/schemas/ExtractModel" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The proposed spec and its eligibility preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "spec": { "$ref": "#/components/schemas/CampaignSpec" },
+                    "totalLeads": { "type": "integer", "description": "Unique leads across the selected searches." },
+                    "eligibleLeads": { "type": "integer", "description": "Leads reachable on the chosen platform — with an email for Smartlead, a LinkedIn URL for HeyReach." },
+                    "withEmail": { "type": "integer" },
+                    "withLinkedIn": { "type": "integer" },
+                    "issues": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Blocking setup problems, in plain language. Empty means the campaign is publishable."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/campaigns": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Publish a campaign",
+        "description": "Step two of two. Persists the reviewed spec and runs it against the provider: creates the list, pushes leads, builds the sequence, and sets the schedule.\n\nPublishing stages everything but stops short of sending. The campaign lands in `awaiting_launch`, and a human has to call the launch endpoint to go live.",
+        "operationId": "publishCampaign",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["spec", "scanIds"],
+                "properties": {
+                  "spec": { "$ref": "#/components/schemas/CampaignSpec" },
+                  "scanIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "format": "uuid" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The campaign was created and is publishing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "campaignId": { "type": "string", "format": "uuid" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      },
+      "get": {
+        "tags": ["Campaigns"],
+        "summary": "List campaigns",
+        "description": "The 50 most recent campaigns in the workspace, newest first.",
+        "operationId": "listCampaigns",
+        "security": [{ "sessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Recent campaigns.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "campaigns": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignSummary" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/campaigns/{id}": {
+      "get": {
+        "tags": ["Campaigns"],
+        "summary": "Get a campaign",
+        "description": "The full campaign record, including the spec it was published from, the per-step execution plan with each step's status, and the launch audit stamp.",
+        "operationId": "getCampaign",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CampaignId" }],
+        "responses": {
+          "200": {
+            "description": "The campaign.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "campaign": { "$ref": "#/components/schemas/Campaign" } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/campaigns/{id}/launch": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Launch a campaign",
+        "description": "The explicit go-live step. Starts the staged campaign at the provider and flips it to `live`.\n\nThe call is the approval: who launched it and when are stamped on the campaign row for the audit trail. Only campaigns sitting in `awaiting_launch` can be launched — anything else is a `409`. On provider failure the campaign moves to `failed` with the provider's message attached.",
+        "operationId": "launchCampaign",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CampaignId" }],
+        "responses": {
+          "200": {
+            "description": "The campaign is live.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean", "examples": [true] },
+                    "status": { "type": "string", "examples": ["live"] }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "409": { "$ref": "#/components/responses/AppConflict" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    },
+    "/api/campaigns/push-list": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Push a lead list",
+        "description": "Creates a HeyReach list and pushes every lead with a LinkedIn URL into it — no sequence, no copy, no model involved. Use it when the sequence will be built in HeyReach's own builder.",
+        "operationId": "pushLeadList",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["scanIds"],
+                "properties": {
+                  "scanIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "format": "uuid" },
+                    "description": "The searches to draw leads from. The list is named after the first one."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The list push started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "campaignId": { "type": "string", "format": "uuid", "description": "Track it with `GET /api/campaigns/{id}`." } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/AppBadRequest" },
+          "401": { "$ref": "#/components/responses/AppUnauthorized" },
+          "404": { "$ref": "#/components/responses/AppNotFound" },
+          "424": { "$ref": "#/components/responses/AppProviderUnavailable" },
+          "502": { "$ref": "#/components/responses/AppUpstreamError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A Revcenter API key: `Authorization: Bearer rvc_live_...`. Keys are scoped, rate limited per key, and metered per workspace."
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "session",
+        "description": "A signed-in workspace session, sent as a browser cookie. Requests must include credentials, and act on the session's active workspace."
+      }
+    },
+    "parameters": {
+      "IdempotencyKeyHeader": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Deduplicates the billing event when a request is retried. Safe to send on every call.",
+        "schema": { "type": "string", "minLength": 8, "maxLength": 160 }
+      },
+      "ScanId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "The search ID.",
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "CampaignId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "The campaign ID.",
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
+    "schemas": {
+      "SearchSurface": {
+        "type": "string",
+        "enum": ["search", "images", "news", "maps", "places", "videos", "shopping", "scholar", "patents", "autocomplete"],
+        "default": "search",
+        "description": "Which search surface to query. `endpoint` and `surface` are interchangeable."
+      },
+      "ScanMode": {
+        "type": "string",
+        "enum": ["candidate", "client"],
+        "default": "candidate",
+        "description": "`candidate` searches for people against a role. `client` discovers target companies first, then their decision-makers."
+      },
+      "ExtractModel": {
+        "type": "string",
+        "enum": ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"],
+        "description": "Which model extracts criteria. Anything outside this allowlist is rejected. Omit to use the workspace default."
+      },
+      "FundingSource": {
+        "type": "string",
+        "enum": ["platform", "workspace_byok"],
+        "description": "`platform` means Revcenter's own provider keys paid for the call and it counts as billable acquisition. `workspace_byok` means your workspace's own provider key did — the activity is recorded, but the vendor spend is yours, not billable overage."
+      },
+      "Meta": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Echoes an inbound `X-Request-Id` when you send one, otherwise generated. Always returned in the `X-Request-Id` header too."
+          }
+        }
+      },
+      "Usage": {
+        "type": "object",
+        "description": "What this single call cost.",
+        "properties": {
+          "operation": { "type": "string", "examples": ["data.people.profile"] },
+          "acquisition_units": { "type": "integer", "examples": [10000] },
+          "billable_units": { "type": "integer", "examples": [10000] },
+          "funding_source": { "$ref": "#/components/schemas/FundingSource" }
+        }
+      },
+      "MeteredEnvelope": {
+        "type": "object",
+        "description": "The standard success envelope for billed endpoints.",
+        "properties": {
+          "data": { "type": "object" },
+          "meta": {
+            "allOf": [
+              { "$ref": "#/components/schemas/Meta" },
+              {
+                "type": "object",
+                "properties": { "usage": { "$ref": "#/components/schemas/Usage" } }
+              }
+            ]
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "description": "The error shape used by every `/v1` endpoint.",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string", "examples": ["insufficient_scope"] },
+              "message": { "type": "string" },
+              "details": { "type": "object", "additionalProperties": true }
+            }
+          },
+          "meta": { "$ref": "#/components/schemas/Meta" }
+        }
+      },
+      "AppError": {
+        "type": "object",
+        "description": "The error shape used by every `/api` endpoint. Flatter than the `/v1` shape, and `code` appears only where the UI branches on it.",
+        "properties": {
+          "error": { "type": "string" },
+          "code": { "type": "string", "examples": ["search_unavailable"] }
+        }
+      },
+      "ProviderPagination": {
+        "type": ["object", "null"],
+        "description": "Provider paging cursor, passed through untouched.",
+        "additionalProperties": true
+      },
+      "PersonSearchResult": {
+        "type": "object",
+        "description": "A person as returned by search — enough to decide whether to spend an enrichment on them.",
+        "properties": {
+          "firstName": { "type": ["string", "null"] },
+          "lastName": { "type": ["string", "null"] },
+          "headline": { "type": ["string", "null"] },
+          "location": { "type": ["string", "null"] },
+          "publicIdentifier": { "type": ["string", "null"], "description": "Pass to `GET /v1/data/people/{profileId}` to enrich." },
+          "profileUrl": { "type": ["string", "null"], "format": "uri" },
+          "photoUrl": { "type": ["string", "null"], "format": "uri" }
+        },
+        "additionalProperties": true
+      },
+      "PersonProfile": {
+        "type": "object",
+        "description": "A full profile. Provider fields pass through, so expect more keys than are listed here.",
+        "properties": {
+          "publicIdentifier": { "type": ["string", "null"] },
+          "firstName": { "type": ["string", "null"] },
+          "lastName": { "type": ["string", "null"] },
+          "headline": { "type": ["string", "null"] },
+          "location": { "type": ["string", "null"] },
+          "photoUrl": { "type": ["string", "null"], "format": "uri" },
+          "experience": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "education": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "skills": { "type": "array", "items": { "type": "string" } },
+          "languages": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        },
+        "additionalProperties": true
+      },
+      "CompanySearchResult": {
+        "type": "object",
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "universalName": { "type": ["string", "null"], "description": "Pass to `GET /v1/data/companies/{companyId}` to enrich." },
+          "industry": { "type": ["string", "null"] },
+          "location": { "type": ["string", "null"] },
+          "linkedinUrl": { "type": ["string", "null"], "format": "uri" },
+          "logoUrl": { "type": ["string", "null"], "format": "uri" }
+        },
+        "additionalProperties": true
+      },
+      "CompanyProfile": {
+        "type": "object",
+        "description": "A full company record. Provider fields pass through, so expect more keys than are listed here.",
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "universalName": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "website": { "type": ["string", "null"], "format": "uri" },
+          "employeeCountRange": { "type": ["string", "null"] },
+          "industries": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "locations": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        },
+        "additionalProperties": true
+      },
+      "Criteria": {
+        "type": "object",
+        "description": "The structured brief a search runs on. Every field is optional, but a search with no signal finds nothing useful.\n\nThe distinction that matters: `exclude_*` fields are hard and disqualify, while `avoid_*` fields are soft and only rank down. A great person at a firm you'd rather avoid still shows up; a person at an excluded firm never does.",
+        "properties": {
+          "family": { "type": "string", "description": "Role family from the taxonomy. Off-taxonomy roles are kept as a title variant instead." },
+          "title_variants": { "type": "array", "items": { "type": "string" }, "description": "Acceptable job titles. A quoted `title: \"X\"` in the brief always survives extraction and leads this list." },
+          "seniority": { "type": "string", "enum": ["c_suite", "vp", "director", "manager", "ic"] },
+          "allowed_seniority": { "type": "array", "items": { "type": "string", "enum": ["c_suite", "vp", "director", "manager", "ic"] } },
+          "must_have": { "type": "array", "items": { "type": "string" } },
+          "industries": { "type": "array", "items": { "type": "string" } },
+          "metro": { "type": "string", "examples": ["San Jose, CA"] },
+          "geo_radius_mi": { "type": "number", "exclusiveMinimum": 0, "description": "Commute radius. Dropped automatically on country-level searches, where it is meaningless." },
+          "remote_ok": { "type": "boolean" },
+          "exclude_titles": { "type": "array", "items": { "type": "string" }, "description": "Hard exclusion." },
+          "exclude_industries": { "type": "array", "items": { "type": "string" }, "description": "Hard exclusion." },
+          "exclude_companies": { "type": "array", "items": { "type": "string" }, "description": "Hard exclusion. Evaluated against search text too, so excluded people never reach paid enrichment." },
+          "avoid_titles": { "type": "array", "items": { "type": "string" }, "description": "Soft negative — ranks down, never rejects." },
+          "avoid_industries": { "type": "array", "items": { "type": "string" }, "description": "Soft negative." },
+          "avoid_companies": { "type": "array", "items": { "type": "string" }, "description": "Soft negative." },
+          "comp_band": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+          "years_experience": {
+            "type": "object",
+            "properties": { "min": { "type": "number" }, "max": { "type": "number" } }
+          },
+          "min_avg_tenure_years": { "type": "number", "exclusiveMinimum": 0 },
+          "skills": { "type": "array", "items": { "type": "string" } },
+          "skills_required": { "type": "array", "items": { "type": "string" } },
+          "languages_required": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Hard requirement, kept separate from skills: holding a job title implies its competencies, but never implies a language."
+          },
+          "target_company_profile": {
+            "type": "object",
+            "properties": {
+              "sector": { "type": "string" },
+              "employee_range": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+              "pe_backed_preferred": { "type": "boolean" }
+            }
+          },
+          "rubric_weights": {
+            "type": "object",
+            "description": "Relative emphasis per scoring dimension, compiled from what this brief stresses and locked to the run. The scorer clamps and renormalizes.",
+            "properties": {
+              "title": { "type": "number" },
+              "years": { "type": "number" },
+              "skills": { "type": "number" },
+              "geo": { "type": "number" },
+              "industry": { "type": "number" },
+              "seniority": { "type": "number" }
+            }
+          }
+        }
+      },
+      "ScanSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": ["string", "null"] },
+          "status": { "$ref": "#/components/schemas/ScanStatus" },
+          "sector": { "type": ["string", "null"] },
+          "pulled": { "type": ["integer", "null"], "description": "How many results have been pulled so far." },
+          "target_count": { "type": ["integer", "null"] },
+          "raw_input": { "type": ["string", "null"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "closed_at": { "type": ["string", "null"], "format": "date-time" },
+          "error": { "type": ["string", "null"] }
+        }
+      },
+      "ScanStatus": {
+        "type": "string",
+        "enum": ["queued", "running", "complete", "failed"],
+        "description": "A run that produced results finishes `complete` even if a late stage errored — partial results are not thrown away."
+      },
+      "Scan": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ScanSummary" },
+          {
+            "type": "object",
+            "properties": {
+              "mode": { "$ref": "#/components/schemas/ScanMode" },
+              "criteria": { "$ref": "#/components/schemas/Criteria" },
+              "qualified": { "type": ["integer", "null"], "description": "How many results cleared the qualification bar." },
+              "quality_report": { "type": ["object", "null"], "additionalProperties": true }
+            }
+          }
+        ]
+      },
+      "Run": {
+        "type": "object",
+        "description": "One stage of the pipeline. The sequence is the audit trail for how a search reached its results.",
+        "properties": {
+          "id": { "type": "string" },
+          "stage": { "type": "string", "examples": ["serp"] },
+          "status": { "type": "string", "examples": ["complete"] },
+          "items_in": { "type": ["integer", "null"] },
+          "items_out": { "type": ["integer", "null"] },
+          "error": { "type": ["string", "null"] },
+          "started_at": { "type": ["string", "null"], "format": "date-time" },
+          "finished_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "Candidate": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "firstName": { "type": ["string", "null"] },
+          "lastName": { "type": ["string", "null"] },
+          "roleTitle": { "type": ["string", "null"] },
+          "company": { "type": ["string", "null"] },
+          "metro": { "type": ["string", "null"] },
+          "profileUrl": { "type": ["string", "null"], "format": "uri" },
+          "photoUrl": { "type": ["string", "null"], "format": "uri" },
+          "headline": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"], "description": "Populated only after contact enrichment." },
+          "phone": { "type": ["string", "null"], "description": "Populated only after contact enrichment." },
+          "hydrated": { "type": ["boolean", "null"], "description": "Whether the full profile was fetched, or only search-level data is known." },
+          "signals": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        }
+      },
+      "PublicCandidate": {
+        "type": "object",
+        "description": "The redacted candidate shape used in shared shortlists. `email` and `phone` are always null.",
+        "properties": {
+          "rank": { "type": ["integer", "null"] },
+          "score": { "type": ["number", "null"] },
+          "candidate": { "$ref": "#/components/schemas/Candidate" }
+        }
+      },
+      "ScoredCandidate": {
+        "type": "object",
+        "properties": {
+          "rank": { "type": ["integer", "null"] },
+          "score": { "type": ["number", "null"], "description": "0–100. Only 80+ is shareable." },
+          "subscores": {
+            "type": ["object", "null"],
+            "description": "Per-dimension breakdown behind the score.",
+            "additionalProperties": true
+          },
+          "phase": { "type": ["string", "null"] },
+          "verdict": { "type": ["string", "null"], "enum": ["accept", "reject", "maybe", null] },
+          "candidate": { "$ref": "#/components/schemas/Candidate" }
+        }
+      },
+      "BulkBatch": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "mode": { "$ref": "#/components/schemas/ScanMode" },
+          "jd_count": { "type": "integer" },
+          "status": { "type": "string", "enum": ["running", "complete", "failed"] },
+          "error": { "type": ["string", "null"], "description": "Set when some or all job descriptions failed, e.g. `2/10 JDs failed`." },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CampaignSpec": {
+        "type": "object",
+        "description": "The reviewable campaign plan. Produced by the plan endpoint, sent back verbatim to publish.",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": ["smartlead", "heyreach"],
+            "description": "`smartlead` sends email and needs leads with emails. `heyreach` sends LinkedIn and needs leads with profile URLs."
+          },
+          "name": { "type": "string" },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The sequence, in order.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "subject": { "type": "string", "description": "Email only." },
+                "body": { "type": "string" },
+                "delayDays": { "type": "integer", "description": "Wait before this step." }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "CampaignSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "provider": { "type": "string", "enum": ["smartlead", "heyreach"] },
+          "name": { "type": ["string", "null"] },
+          "status": { "$ref": "#/components/schemas/CampaignStatus" },
+          "leads_pushed": { "type": ["integer", "null"] },
+          "external_campaign_id": { "type": ["string", "null"], "description": "The campaign's ID at the provider." },
+          "error": { "type": ["string", "null"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CampaignStatus": {
+        "type": "string",
+        "enum": ["publishing", "awaiting_launch", "live", "failed"],
+        "description": "Publishing stages everything and stops at `awaiting_launch`. Only an explicit launch call moves it to `live`."
+      },
+      "Campaign": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CampaignSummary" },
+          {
+            "type": "object",
+            "properties": {
+              "spec": { "$ref": "#/components/schemas/CampaignSpec" },
+              "scan_ids": { "type": "array", "items": { "type": "string", "format": "uuid" } },
+              "steps": {
+                "type": "array",
+                "description": "Execution plan with live per-step status.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": { "type": "string", "examples": ["start"] },
+                    "label": { "type": "string" },
+                    "status": { "type": "string", "enum": ["pending", "ok", "failed"] },
+                    "detail": { "type": "string" }
+                  }
+                }
+              },
+              "launched_at": { "type": ["string", "null"], "format": "date-time" },
+              "launched_by": { "type": ["string", "null"], "description": "Email of whoever clicked go-live." }
+            }
+          }
+        ]
+      }
+    },
+    "responses": {
+      "InvalidRequest": {
+        "description": "The request body failed validation.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "examples": {
+              "missingQuery": {
+                "value": { "error": { "code": "invalid_request", "message": "query is required." }, "meta": { "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33" } }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "No key, or the key is invalid, expired, or revoked.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "examples": {
+              "missing": { "value": { "error": { "code": "missing_api_key", "message": "Send Authorization: Bearer rvc_live_..." }, "meta": { "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33" } } },
+              "invalid": { "value": { "error": { "code": "invalid_api_key", "message": "API key is invalid, expired, or revoked." }, "meta": { "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33" } } }
+            }
+          }
+        }
+      },
+      "InsufficientScope": {
+        "description": "The key authenticated but lacks the scope this endpoint requires.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "examples": {
+              "scope": { "value": { "error": { "code": "insufficient_scope", "message": "API key requires scope 'data:people:read'." }, "meta": { "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33" } } }
+            }
+          }
+        }
+      },
+      "ProviderUnavailable": {
+        "description": "The workspace has no usable provider key for this capability — it is either unprovisioned or switched off.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "examples": {
+              "unavailable": { "value": { "error": { "code": "provider_unavailable", "message": "Web search is unavailable for this workspace." }, "meta": { "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33" } } }
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "The key exceeded its per-minute limit. Check `X-RateLimit-Reset` for when the window rolls over.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "examples": {
+              "limited": { "value": { "error": { "code": "rate_limited", "message": "API key rate limit exceeded." }, "meta": { "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33" } } }
+            }
+          }
+        }
+      },
+      "ProviderError": {
+        "description": "The upstream data source failed. Nothing is billed.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "examples": {
+              "upstream": { "value": { "error": { "code": "provider_error", "message": "Harvest profile request failed" }, "meta": { "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33" } } }
+            }
+          }
+        }
+      },
+      "AppBadRequest": {
+        "description": "Missing or invalid input.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AppError" },
+            "examples": { "missing": { "value": { "error": "criteria (CriteriaV2) is required" } } }
+          }
+        }
+      },
+      "AppUnauthorized": {
+        "description": "Not signed in, no active workspace, or the account lacks the role this action needs. A frozen account gets `403` with code `frozen`.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AppError" },
+            "examples": { "signIn": { "value": { "error": "Sign in required" } } }
+          }
+        }
+      },
+      "AppNotFound": {
+        "description": "The record does not exist, or belongs to another workspace. The two are deliberately indistinguishable.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AppError" },
+            "examples": { "notFound": { "value": { "error": "Scan not found" } } }
+          }
+        }
+      },
+      "AppConflict": {
+        "description": "The record is in a state that does not allow this action.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AppError" },
+            "examples": {
+              "running": { "value": { "error": "Scan is already running" } },
+              "notAwaiting": { "value": { "error": "Campaign is not awaiting launch" } }
+            }
+          }
+        }
+      },
+      "AppProviderUnavailable": {
+        "description": "A capability this action needs is not connected for the workspace. The `code` names which one.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AppError" },
+            "examples": {
+              "search": { "value": { "error": "Search is unavailable for this workspace.", "code": "search_unavailable" } },
+              "scoring": { "value": { "error": "AI scoring is unavailable for this workspace.", "code": "ai_scoring_unavailable" } },
+              "heyreach": { "value": { "error": "No HeyReach API key configured — add one in Credentials.", "code": "heyreach_not_configured" } }
+            }
+          }
+        }
+      },
+      "AppUpstreamError": {
+        "description": "A downstream service or the database failed.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AppError" },
+            "examples": { "upstream": { "value": { "error": "Spec extraction failed" } } }
+          }
+        }
+      }
+    }
+  }
+}

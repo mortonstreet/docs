@@ -1,0 +1,83 @@
+---
+title: "Errors"
+description: "Error shapes, status codes, and safe retries."
+---
+
+## Two shapes
+
+`/v1` errors are structured, with a stable machine-readable `code`. Branch on the code, never on the message.
+
+```json
+{
+  "error": {
+    "code": "insufficient_scope",
+    "message": "API key requires scope 'data:people:read'."
+  },
+  "meta": {
+    "request_id": "6f1c2b7e-9a3d-4c5f-8e21-0b7d4a9c1e33"
+  }
+}
+```
+
+`/api` errors are flatter. `error` is always a human-readable string; `code` appears only where a caller needs to branch.
+
+```json
+{
+  "error": "Search is unavailable for this workspace.",
+  "code": "search_unavailable"
+}
+```
+
+## Status codes
+
+| Status | `/v1` code | What happened |
+| --- | --- | --- |
+| `400` | `invalid_request` | The body failed validation |
+| `401` | `missing_api_key` | No `Authorization: Bearer` header |
+| `401` | `invalid_api_key` | The key is invalid, expired, or revoked |
+| `403` | `insufficient_scope` | The key authenticated but lacks the required scope |
+| `409` | — | The record's state forbids the action |
+| `410` | — | A share link expired |
+| `424` | `provider_unavailable` | The workspace has no usable provider key for this capability |
+| `429` | `rate_limited` | The key exceeded its per-minute limit |
+| `502` | `provider_error` | The upstream data source failed |
+
+A few `/api`-specific codes carry the same meaning at `424`, naming which capability is missing: `search_unavailable`, `ai_scoring_unavailable`, `smartlead_not_configured`, `heyreach_not_configured`.
+
+## What to do about each
+
+<AccordionGroup>
+  <Accordion title="424 — provider unavailable">
+    Not a transient failure. The workspace is either unprovisioned for that capability or has it switched off, and retrying changes nothing. Connect the credential, then retry.
+  </Accordion>
+  <Accordion title="429 — rate limited">
+    Back off until the `X-RateLimit-Reset` timestamp rather than retrying immediately. If you hit this steadily rather than in bursts, the key needs a higher limit.
+  </Accordion>
+  <Accordion title="502 — provider error">
+    The upstream data source failed. **Nothing is billed** — no cost event is written when the provider call throws. Safe to retry with backoff.
+  </Accordion>
+  <Accordion title="409 — conflict">
+    The record is in a state that forbids the action: a search that is already running cannot be expanded, and a campaign that is not `awaiting_launch` cannot be launched. Read the record first, then act on its actual state.
+  </Accordion>
+  <Accordion title="404 on a record you own">
+    On `/api`, a record in another workspace is indistinguishable from one that does not exist. Confirm the session's active workspace is the one that owns the record.
+  </Accordion>
+</AccordionGroup>
+
+## Retries and idempotency
+
+Billed endpoints accept an idempotency key, either as the `Idempotency-Key` header or an `idempotencyKey` body field. Reusing one across a retry means the work is not double-billed.
+
+```bash
+curl https://api.revcenter.ai/v1/data/people/search \
+  -H "Authorization: Bearer $REVCENTER_API_KEY" \
+  -H "Idempotency-Key: sourcing-run-4417-page-1" \
+  -H "Content-Type: application/json" \
+  -d '{ "search": "wealth advisor", "location": "San Jose, CA" }'
+```
+
+Send one on every billed call. It costs nothing when there is no retry, and it is the only thing standing between a network blip and a duplicate charge.
+
+## Debugging
+
+Quote the `request_id` from the failing response. It appears in `meta.request_id`, in the `X-Request-Id` response header, and on the matching row in `GET /v1/usage/costs` — which is also how you confirm whether a failed call was ever billed.

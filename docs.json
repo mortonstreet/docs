@@ -1,41 +1,90 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Revcenter",
+  "theme": "maple",
+  "name": "Revcenter API",
+  "description": "Search, enrich, and activate people and companies.",
   "colors": {
     "primary": "#1A1A1A",
-    "light": "#4D4D4D",
+    "light": "#E5E5E5",
     "dark": "#000000"
+  },
+  "api": {
+    "playground": {
+      "display": "interactive"
+    },
+    "examples": {
+      "languages": [
+        "curl",
+        "javascript",
+        "python"
+      ]
+    }
   },
   "navigation": {
     "groups": [
       {
         "group": "Get Started",
+        "openapi": "openapi.json",
         "pages": [
           "introduction",
-          "quickstart"
+          "authentication",
+          "errors",
+          "metering",
+          "GET /v1/health",
+          "GET /v1/usage",
+          "GET /v1/usage/costs"
         ]
       },
       {
-        "group": "Features",
+        "group": "Search",
+        "openapi": "openapi.json",
         "pages": [
-          "guides/new-search",
-          "guides/bulk-search",
-          "guides/past-searches",
-          "guides/people-companies",
-          "guides/campaigns"
+          "POST /v1/data/search/web",
+          "POST /api/intake",
+          "POST /api/scans",
+          "GET /api/scans",
+          "GET /api/scans/{id}",
+          "GET /api/scans/{id}/prompt",
+          "POST /api/scans/{id}/expand",
+          "POST /api/scans/{id}/enrich",
+          "POST /api/scans/{id}/candidates/{candidateId}/verdict",
+          "POST /api/scans/{id}/share",
+          "GET /api/shares/{token}",
+          "GET /api/scans/{id}/export.csv",
+          "POST /api/bulk",
+          "GET /api/bulk",
+          "GET /api/bulk/{id}"
         ]
       },
       {
-        "group": "Guides",
+        "group": "People",
+        "openapi": "openapi.json",
         "pages": [
-          "guides/using-the-app",
-          "guides/search-quality",
-          "guides/recruiter-ontology",
-          "guides/account-settings",
-          "guides/authentication",
-          "guides/api-keys",
-          "guides/revcenter-api-v1"
+          "POST /v1/data/people/search",
+          "GET /v1/data/people/{profileId}",
+          "GET /api/contacts"
+        ]
+      },
+      {
+        "group": "Companies",
+        "openapi": "openapi.json",
+        "pages": [
+          "POST /v1/data/companies/search",
+          "GET /v1/data/companies/{companyId}",
+          "GET /api/companies",
+          "GET /api/companies/{id}/people"
+        ]
+      },
+      {
+        "group": "Campaigns",
+        "openapi": "openapi.json",
+        "pages": [
+          "POST /api/campaigns/plan",
+          "POST /api/campaigns",
+          "POST /api/campaigns/{id}/launch",
+          "POST /api/campaigns/push-list",
+          "GET /api/campaigns",
+          "GET /api/campaigns/{id}"
         ]
       }
     ]
